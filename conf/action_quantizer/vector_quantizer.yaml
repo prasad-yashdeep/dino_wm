@@ -1,0 +1,4 @@
+_target_: models.quantizer.vector_quantizer.VectorQuantizer
+n_embed: 128  # Will be overridden by state_vocabulary_size
+embedding_dim: ???  # Will be calculated dynamically
+commitment_cost: 0.25

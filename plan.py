@@ -28,7 +28,6 @@ ALL_MODEL_KEYS = [
     "encoder",
     "predictor",
     "decoder",
-    "proprio_encoder",
     "action_encoder",
 ]
 
@@ -146,8 +145,6 @@ class PlanWorkspace:
             action_std=self.dset.action_std,
             state_mean=self.dset.state_mean,
             state_std=self.dset.state_std,
-            proprio_mean=self.dset.proprio_mean,
-            proprio_std=self.dset.proprio_std,
             transform=self.dset.transform,
         )
 
@@ -396,15 +393,12 @@ def load_model(model_ckpt, train_cfg, num_action_repeat, device):
     model = hydra.utils.instantiate(
         train_cfg.model,
         encoder=result["encoder"],
-        proprio_encoder=result["proprio_encoder"],
         action_encoder=result["action_encoder"],
         predictor=result["predictor"],
         decoder=result["decoder"],
-        proprio_dim=train_cfg.proprio_emb_dim,
         action_dim=train_cfg.action_emb_dim,
         concat_dim=train_cfg.concat_dim,
         num_action_repeat=num_action_repeat,
-        num_proprio_repeat=train_cfg.num_proprio_repeat,
     )
     model.to(device)
     return model

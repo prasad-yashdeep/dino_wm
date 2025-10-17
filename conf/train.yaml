@@ -1,11 +1,12 @@
 defaults:
   - _self_
   - env: point_maze
-  - encoder: dino 
+  - encoder: dino
   - action_encoder: proprio
-  - proprio_encoder: proprio
   - decoder: vqvae
   - predictor: vit
+  - state_quantizer: vector_quantizer
+  - action_quantizer: vector_quantizer
   - override hydra/launcher: submitit_slurm
 
 # base path to save model outputs. Checkpoints will be saved to ${ckpt_base_path}/outputs.
@@ -51,10 +52,6 @@ normalize_action: True
 action_emb_dim: 10
 num_action_repeat: 1
 
-# proprio encoder
-proprio_emb_dim: 10 
-num_proprio_repeat: 1
-
 num_hist: 3
 num_pred: 1 # only supports 1
 has_predictor: True # set this to False for only training a decoder
@@ -68,6 +65,12 @@ model:
   train_encoder: False
   train_predictor: True
   train_decoder: True
+  vcreg_loss_weight: 1.0
+  quantization_loss_weight: 1.0
+
+# Quantization settings
+state_vocabulary_size: 128
+action_vocabulary_size: 128
 
 debug: False 
 

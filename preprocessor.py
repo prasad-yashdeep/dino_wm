@@ -2,21 +2,17 @@ import torch
 from einops import rearrange
 
 class Preprocessor:
-    def __init__(self, 
+    def __init__(self,
         action_mean,
         action_std,
         state_mean,
         state_std,
-        proprio_mean,
-        proprio_std,
         transform,
     ):
         self.action_mean = action_mean
         self.action_std = action_std
         self.state_mean = state_mean
         self.state_std = state_std
-        self.proprio_mean = proprio_mean
-        self.proprio_std = proprio_std
         self.transform = transform
 
     def normalize_actions(self, actions):
@@ -27,15 +23,9 @@ class Preprocessor:
 
     def denormalize_actions(self, actions):
         '''
-        actions: (b, t, action_dim)  
+        actions: (b, t, action_dim)
         '''
         return actions * self.action_std + self.action_mean
-    
-    def normalize_proprios(self, proprio):
-        '''
-        input shape (..., proprio_dim)
-        '''
-        return (proprio - self.proprio_mean) / self.proprio_std
 
     def normalize_states(self, state):
         '''
@@ -58,5 +48,4 @@ class Preprocessor:
         '''
         transformed_obs = {}
         transformed_obs['visual'] = self.transform_obs_visual(obs['visual'])
-        transformed_obs['proprio'] = self.normalize_proprios(torch.tensor(obs['proprio']))
         return transformed_obs

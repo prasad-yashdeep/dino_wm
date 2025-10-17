@@ -1,0 +1,6 @@
+# Conv2D Decoder Configuration
+_target_: models.decoder.conv2d.Conv2DDecoder
+emb_dim: 16 # Embedding dimension (input channels from latent space)
+output_channels: 3 # Output channels (3 for RGB images)
+depth: ??? # Number of upsampling layers (should match encoder depth)
+hidden_dim: ??? # Base number of hidden channels (should match encoder hidden_dim)

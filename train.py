@@ -141,7 +141,6 @@ class Trainer:
 
         self.encoder = None
         self.action_encoder = None
-        self.proprio_encoder = None
         self.predictor = None
         self.decoder = None
         self.train_encoder = self.cfg.model.train_encoder
@@ -159,14 +158,18 @@ class Trainer:
             ["encoder", "encoder_optimizer"] if self.train_encoder else []
         )
         self._keys_to_save += (
-            ["predictor", "predictor_optimizer"]
+            ["predictor", "predictor_optimizer", "action_encoder", "action_encoder_optimizer"]
             if self.train_predictor and self.cfg.has_predictor
             else []
         )
         self._keys_to_save += (
             ["decoder", "decoder_optimizer"] if self.train_decoder else []
         )
-        self._keys_to_save += ["action_encoder", "proprio_encoder"]
+        # Add quantizers if they exist
+        if self.cfg.get("state_quantizer") is not None:
+            self._keys_to_save += ["state_quantizer"]
+        if self.cfg.get("action_quantizer") is not None:
+            self._keys_to_save += ["action_quantizer"]
 
         self.init_models()
         self.init_optimizers()
@@ -217,15 +220,6 @@ class Trainer:
             for param in self.encoder.parameters():
                 param.requires_grad = False
 
-        self.proprio_encoder = hydra.utils.instantiate(
-            self.cfg.proprio_encoder,
-            in_chans=self.datasets["train"].proprio_dim,
-            emb_dim=self.cfg.proprio_emb_dim,
-        )
-        proprio_emb_dim = self.proprio_encoder.emb_dim
-        print(f"Proprio encoder type: {type(self.proprio_encoder)}")
-        self.proprio_encoder = self.accelerator.prepare(self.proprio_encoder)
-
         self.action_encoder = hydra.utils.instantiate(
             self.cfg.action_encoder,
             in_chans=self.datasets["train"].action_dim,
@@ -234,11 +228,41 @@ class Trainer:
         action_emb_dim = self.action_encoder.emb_dim
         print(f"Action encoder type: {type(self.action_encoder)}")
 
-        self.action_encoder = self.accelerator.prepare(self.action_encoder)
+        # Initialize quantizers if configured
+        self.state_quantizer = None
+        self.action_quantizer = None
+        if self.cfg.get("state_quantizer") is not None:
+            # Calculate state embedding dimension
+            if self.encoder.latent_ndim == 1:
+                state_emb_dim = self.encoder.emb_dim
+            else:
+                state_emb_dim = self.encoder.emb_dim
+
+            self.state_quantizer = hydra.utils.instantiate(
+                self.cfg.state_quantizer,
+                embedding_dim=state_emb_dim,
+                n_embed=self.cfg.get("state_vocabulary_size", 128),
+            )
+            print(f"State quantizer initialized with {self.cfg.get('state_vocabulary_size', 128)} codes")
+
+        if self.cfg.get("action_quantizer") is not None:
+            self.action_quantizer = hydra.utils.instantiate(
+                self.cfg.action_quantizer,
+                embedding_dim=action_emb_dim,
+                n_embed=self.cfg.get("action_vocabulary_size", 128),
+            )
+            print(f"Action quantizer initialized with {self.cfg.get('action_vocabulary_size', 128)} codes")
+
+        # Prepare action encoder and quantizers with accelerator
+        if self.state_quantizer is not None and self.action_quantizer is not None:
+            self.action_encoder, self.state_quantizer, self.action_quantizer = self.accelerator.prepare(
+                self.action_encoder, self.state_quantizer, self.action_quantizer
+            )
+        else:
+            self.action_encoder = self.accelerator.prepare(self.action_encoder)
 
         if self.accelerator.is_main_process:
             self.wandb_run.watch(self.action_encoder)
-            self.wandb_run.watch(self.proprio_encoder)
 
         # initialize predictor
         if self.encoder.latent_ndim == 1:  # if feature is 1D
@@ -258,10 +282,7 @@ class Trainer:
                     num_patches=num_patches,
                     num_frames=self.cfg.num_hist,
                     dim=self.encoder.emb_dim
-                    + (
-                        proprio_emb_dim * self.cfg.num_proprio_repeat
-                        + action_emb_dim * self.cfg.num_action_repeat
-                    )
+                    + (action_emb_dim * self.cfg.num_action_repeat)
                     * (self.cfg.concat_dim),
                 )
             if not self.train_predictor:
@@ -295,15 +316,14 @@ class Trainer:
         self.model = hydra.utils.instantiate(
             self.cfg.model,
             encoder=self.encoder,
-            proprio_encoder=self.proprio_encoder,
             action_encoder=self.action_encoder,
             predictor=self.predictor,
             decoder=self.decoder,
-            proprio_dim=proprio_emb_dim,
+            state_quantizer=self.state_quantizer,
+            action_quantizer=self.action_quantizer,
             action_dim=action_emb_dim,
             concat_dim=self.cfg.concat_dim,
             num_action_repeat=self.cfg.num_action_repeat,
-            num_proprio_repeat=self.cfg.num_proprio_repeat,
         )
 
     def init_optimizers(self):
@@ -322,9 +342,7 @@ class Trainer:
             )
 
             self.action_encoder_optimizer = torch.optim.AdamW(
-                itertools.chain(
-                    self.action_encoder.parameters(), self.proprio_encoder.parameters()
-                ),
+                self.action_encoder.parameters(),
                 lr=self.cfg.training.action_encoder_lr,
             )
             self.action_encoder_optimizer = self.accelerator.prepare(
@@ -336,6 +354,7 @@ class Trainer:
                 self.decoder.parameters(), lr=self.cfg.training.decoder_lr
             )
             self.decoder_optimizer = self.accelerator.prepare(self.decoder_optimizer)
+
 
     def monitor_jobs(self, lock):
         """

@@ -73,8 +73,7 @@ class TrajSlicerDataset(TrajDataset):
                 ]  # slice indices follow convention [start, end)
         # randomly permute the slices
         self.slices = np.random.permutation(self.slices)
-        
-        self.proprio_dim = self.dataset.proprio_dim
+
         if process_actions == "concat":
             self.action_dim = self.dataset.action_dim * self.frameskip
         else:

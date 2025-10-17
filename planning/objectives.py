@@ -17,26 +17,23 @@ def create_objective_fn(alpha, base, mode="last"):
     def objective_fn_last(z_obs_pred, z_obs_tgt):
         """
         Args:
-            z_obs_pred: dict, {'visual': (B, T, *D_visual), 'proprio': (B, T, *D_proprio)}
-            z_obs_tgt: dict, {'visual': (B, T, *D_visual), 'proprio': (B, T, *D_proprio)}
+            z_obs_pred: dict, {'visual': (B, T, *D_visual)}
+            z_obs_tgt: dict, {'visual': (B, T, *D_visual)}
         Returns:
             loss: tensor (B, )
         """
         loss_visual = metric(z_obs_pred["visual"][:, -1:], z_obs_tgt["visual"]).mean(
             dim=tuple(range(1, z_obs_pred["visual"].ndim))
         )
-        loss_proprio = metric(z_obs_pred["proprio"][:, -1:], z_obs_tgt["proprio"]).mean(
-            dim=tuple(range(1, z_obs_pred["proprio"].ndim))
-        )
-        loss = loss_visual + alpha * loss_proprio
+        loss = loss_visual
         return loss
 
     def objective_fn_all(z_obs_pred, z_obs_tgt):
         """
         Loss calculated on all pred frames.
         Args:
-            z_obs_pred: dict, {'visual': (B, T, *D_visual), 'proprio': (B, T, *D_proprio)}
-            z_obs_tgt: dict, {'visual': (B, T, *D_visual), 'proprio': (B, T, *D_proprio)}
+            z_obs_pred: dict, {'visual': (B, T, *D_visual)}
+            z_obs_tgt: dict, {'visual': (B, T, *D_visual)}
         Returns:
             loss: tensor (B, )
         """
@@ -47,12 +44,8 @@ def create_objective_fn(alpha, base, mode="last"):
         loss_visual = metric(z_obs_pred["visual"], z_obs_tgt["visual"]).mean(
             dim=tuple(range(2, z_obs_pred["visual"].ndim))
         )
-        loss_proprio = metric(z_obs_pred["proprio"], z_obs_tgt["proprio"]).mean(
-            dim=tuple(range(2, z_obs_pred["proprio"].ndim))
-        )
         loss_visual = (loss_visual * coeffs).mean(dim=1)
-        loss_proprio = (loss_proprio * coeffs).mean(dim=1)
-        loss = loss_visual + alpha * loss_proprio
+        loss = loss_visual
         return loss
 
     if mode == "last":
