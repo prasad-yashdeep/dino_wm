@@ -9,7 +9,7 @@ from torch.nn import functional as F
 @dataclass
 class VCRegObjectiveConfig():
     std_coeff: float = 1.0
-    cov_coeff: float = 0.04
+    cov_coeff: float = 1.0  # Increased from 0.04 to prevent representation collapse
     cov_per_feature: bool = False
     adjust_cov: bool = True
     cov_chunk_size: Optional[int] = None
@@ -27,7 +27,7 @@ class VCRegObjective(torch.nn.Module):
     def __call__(self, z):
         loss_components = {}
 
-        z_flat = z.view(z.shape[0], -1)  # Flatten the tensor to (B, D) shape
+        z_flat = z.reshape(z.shape[0], -1)  # Flatten the tensor to (B, D) shape
         std_loss = self.std_loss(z_flat)
         cov_loss = self.cov_loss(z_flat)
 

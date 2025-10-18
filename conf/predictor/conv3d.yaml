@@ -2,5 +2,4 @@ _target_: models.predictor.conv3d.Conv3DPredictorCausal
 hidden_dim: 128
 depth: 3
 dropout: 0.1
-emb_dim: ??? # This should be set to the output dimension of the encoder
-num_frames: ???
+# emb_dim and num_frames are set at runtime by train.py

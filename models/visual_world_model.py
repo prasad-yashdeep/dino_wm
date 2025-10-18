@@ -81,6 +81,10 @@ class VWorldModel(nn.Module):
         self.action_encoder.train(mode)
         if self.decoder is not None and self.train_decoder:
             self.decoder.train(mode)
+        if self.state_quantizer is not None:
+            self.state_quantizer.train(mode)
+        if self.action_quantizer is not None:
+            self.action_quantizer.train(mode)
 
     def eval(self):
         super().eval()
@@ -90,6 +94,10 @@ class VWorldModel(nn.Module):
         self.action_encoder.eval()
         if self.decoder is not None:
             self.decoder.eval()
+        if self.state_quantizer is not None:
+            self.state_quantizer.eval()
+        if self.action_quantizer is not None:
+            self.action_quantizer.eval()
 
     def encode(self, obs, act):
         """
@@ -323,6 +331,40 @@ class VWorldModel(nn.Module):
             with torch.no_grad():
                 z_visual_loss = self.emb_criterion(z_pred_obs, z_tgt_obs)
                 z_collapse_loss = self.emb_criterion(z_src_obs, z_tgt_obs)  # checking if representation collapses
+
+                # DEBUG: Log detailed statistics about embeddings
+                if torch.rand(1).item() < 0.01:  # Log 1% of batches to avoid spam
+                    print("\n" + "="*80)
+                    print("🔍 COLLAPSE LOSS DEBUG (First batch sample)")
+                    print("="*80)
+                    print(f"z_src_obs shape: {z_src_obs.shape}")
+                    print(f"z_tgt_obs shape: {z_tgt_obs.shape}")
+                    print(f"\nz_src_obs stats:")
+                    print(f"  Mean: {z_src_obs.mean().item():.6f}")
+                    print(f"  Std:  {z_src_obs.std().item():.6f}")
+                    print(f"  Min:  {z_src_obs.min().item():.6f}")
+                    print(f"  Max:  {z_src_obs.max().item():.6f}")
+                    print(f"\nz_tgt_obs stats:")
+                    print(f"  Mean: {z_tgt_obs.mean().item():.6f}")
+                    print(f"  Std:  {z_tgt_obs.std().item():.6f}")
+                    print(f"  Min:  {z_tgt_obs.min().item():.6f}")
+                    print(f"  Max:  {z_tgt_obs.max().item():.6f}")
+                    print(f"\nDifference (z_src - z_tgt):")
+                    diff = (z_src_obs - z_tgt_obs).abs()
+                    print(f"  Mean abs diff: {diff.mean().item():.6f}")
+                    print(f"  Max abs diff:  {diff.max().item():.6f}")
+                    print(f"\nLosses:")
+                    print(f"  z_collapse_loss: {z_collapse_loss.item():.10f}")
+                    print(f"  z_visual_loss:   {z_visual_loss.item():.10f}")
+
+                    # Check if embeddings are all zeros or very close to zero
+                    if z_src_obs.abs().max() < 1e-3:
+                        print("\n⚠️  WARNING: z_src_obs is nearly zero!")
+                    if z_tgt_obs.abs().max() < 1e-3:
+                        print("\n⚠️  WARNING: z_tgt_obs is nearly zero!")
+                    if diff.mean() < 1e-3:
+                        print("\n⚠️  WARNING: Embeddings are nearly identical!")
+                    print("="*80 + "\n")
 
             z_loss = self.emb_criterion(z_pred_obs, z_tgt_obs.detach())
 

@@ -1,4 +1,1 @@
-_target_: models.dummy.SimpleMLPActionEncoder
-num_frames: 1
-tubelet_size: 1
-use_3d_pos: False
+_target_: models.action_encoder.proprio.ProprioEncoder

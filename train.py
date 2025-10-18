@@ -81,34 +81,43 @@ class Trainer:
 
         self.accelerator.wait_for_everyone()
         if self.accelerator.is_main_process:
-            wandb_run_id = None
-            if os.path.exists("hydra.yaml"):
-                existing_cfg = OmegaConf.load("hydra.yaml")
-                wandb_run_id = existing_cfg["wandb_run_id"]
-                log.info(f"Resuming Wandb run {wandb_run_id}")
+            if not self.cfg.disable_wandb:
+                wandb_run_id = None
+                if os.path.exists("hydra.yaml"):
+                    existing_cfg = OmegaConf.load("hydra.yaml")
+                    if "wandb_run_id" in existing_cfg:
+                        wandb_run_id = existing_cfg["wandb_run_id"]
+                        log.info(f"Resuming Wandb run {wandb_run_id}")
 
-            wandb_dict = OmegaConf.to_container(cfg, resolve=True)
-            if self.cfg.debug:
-                log.info("WARNING: Running in debug mode...")
-                self.wandb_run = wandb.init(
-                    project="dino_wm_debug",
-                    config=wandb_dict,
-                    id=wandb_run_id,
-                    resume="allow",
-                )
+                wandb_dict = OmegaConf.to_container(cfg, resolve=True)
+                if self.cfg.debug:
+                    log.info("WARNING: Running in debug mode...")
+                    self.wandb_run = wandb.init(
+                        project="dino_wm_debug",
+                        config=wandb_dict,
+                        id=wandb_run_id,
+                        resume="allow",
+                    )
+                else:
+                    self.wandb_run = wandb.init(
+                        project="dino_wm",
+                        config=wandb_dict,
+                        id=wandb_run_id,
+                        resume="allow",
+                    )
+                OmegaConf.set_struct(cfg, False)
+                cfg.wandb_run_id = self.wandb_run.id
+                OmegaConf.set_struct(cfg, True)
+                wandb.run.name = "{}".format(model_name)
             else:
-                self.wandb_run = wandb.init(
-                    project="dino_wm",
-                    config=wandb_dict,
-                    id=wandb_run_id,
-                    resume="allow",
-                )
-            OmegaConf.set_struct(cfg, False)
-            cfg.wandb_run_id = self.wandb_run.id
-            OmegaConf.set_struct(cfg, True)
-            wandb.run.name = "{}".format(model_name)
+                log.info("Wandb logging disabled")
+                self.wandb_run = None
+                OmegaConf.set_struct(cfg, False)
+                cfg.wandb_run_id = None
+                OmegaConf.set_struct(cfg, True)
+
             with open(os.path.join(os.getcwd(), "hydra.yaml"), "w") as f:
-                f.write(OmegaConf.to_yaml(cfg, resolve=True))
+                f.write(OmegaConf.to_yaml(cfg, resolve=False))
 
         seed(cfg.training.seed)
         log.info(f"Loading dataset from {self.cfg.env.dataset.data_path} ...")
@@ -155,15 +164,16 @@ class Trainer:
             "epoch",
         ]
         self._keys_to_save += (
-            ["encoder", "encoder_optimizer"] if self.train_encoder else []
+            ["encoder", "encoder_optimizer", "encoder_scheduler"] if self.train_encoder else []
         )
         self._keys_to_save += (
-            ["predictor", "predictor_optimizer", "action_encoder", "action_encoder_optimizer"]
+            ["predictor", "predictor_optimizer", "predictor_scheduler",
+             "action_encoder", "action_encoder_optimizer", "action_encoder_scheduler"]
             if self.train_predictor and self.cfg.has_predictor
             else []
         )
         self._keys_to_save += (
-            ["decoder", "decoder_optimizer"] if self.train_decoder else []
+            ["decoder", "decoder_optimizer", "decoder_scheduler"] if self.train_decoder else []
         )
         # Add quantizers if they exist
         if self.cfg.get("state_quantizer") is not None:
@@ -183,10 +193,24 @@ class Trainer:
                 os.makedirs("checkpoints")
             ckpt = {}
             for k in self._keys_to_save:
-                if hasattr(self.__dict__[k], "module"):
-                    ckpt[k] = self.accelerator.unwrap_model(self.__dict__[k])
+                # Skip if scheduler is None (when scheduler type is "none")
+                if k.endswith("_scheduler") and self.__dict__.get(k) is None:
+                    continue
+
+                obj = self.__dict__[k]
+
+                # Save state_dict for optimizers and schedulers (not picklable)
+                if k.endswith("_optimizer"):
+                    ckpt[k] = obj.state_dict()
+                elif k.endswith("_scheduler"):
+                    ckpt[k] = obj.state_dict()
+                # Unwrap models from accelerator
+                elif hasattr(obj, "module"):
+                    ckpt[k] = self.accelerator.unwrap_model(obj)
+                # Save everything else as-is
                 else:
-                    ckpt[k] = self.__dict__[k]
+                    ckpt[k] = obj
+
             torch.save(ckpt, "checkpoints/model_latest.pth")
             torch.save(ckpt, f"checkpoints/model_{self.epoch}.pth")
             log.info("Saved model to {}".format(os.getcwd()))
@@ -198,18 +222,40 @@ class Trainer:
         return ckpt_path, model_name, model_epoch
 
     def load_ckpt(self, filename="model_latest.pth"):
-        ckpt = torch.load(filename)
+        ckpt = torch.load(filename, weights_only=False)
         for k, v in ckpt.items():
-            self.__dict__[k] = v
+            # Load state_dict for optimizers and schedulers
+            if k.endswith("_optimizer") and isinstance(v, dict):
+                if k in self.__dict__:
+                    self.__dict__[k].load_state_dict(v)
+                else:
+                    log.warning(f"Optimizer {k} not found in trainer, skipping")
+            elif k.endswith("_scheduler") and isinstance(v, dict):
+                if k in self.__dict__:
+                    self.__dict__[k].load_state_dict(v)
+                else:
+                    log.warning(f"Scheduler {k} not found in trainer, skipping")
+            # Load everything else directly
+            else:
+                self.__dict__[k] = v
         not_in_ckpt = set(self._keys_to_save) - set(ckpt.keys())
         if len(not_in_ckpt):
             log.warning("Keys not found in ckpt: %s", not_in_ckpt)
 
     def init_models(self):
         model_ckpt = Path(self.cfg.saved_folder) / "checkpoints" / "model_latest.pth"
-        if model_ckpt.exists():
+        force_restart = self.cfg.get("force_restart", False)
+
+        if model_ckpt.exists() and not force_restart:
+            log.info(f"⚠️  Found existing checkpoint: {model_ckpt}")
+            log.info(f"⚠️  Loading checkpoint (set force_restart=True to start fresh)")
             self.load_ckpt(model_ckpt)
             log.info(f"Resuming from epoch {self.epoch}: {model_ckpt}")
+        elif model_ckpt.exists() and force_restart:
+            log.warning(f"🔄 Found checkpoint but force_restart=True, starting fresh!")
+            log.warning(f"Old checkpoint at: {model_ckpt}")
+        else:
+            log.info("✅ Starting training from scratch (no checkpoint found)")
 
         # initialize encoder
         if self.encoder is None:
@@ -228,10 +274,10 @@ class Trainer:
         action_emb_dim = self.action_encoder.emb_dim
         print(f"Action encoder type: {type(self.action_encoder)}")
 
-        # Initialize quantizers if configured
+        # Initialize quantizers if configured and quantize is enabled
         self.state_quantizer = None
         self.action_quantizer = None
-        if self.cfg.get("state_quantizer") is not None:
+        if self.cfg.get("quantize", True) and self.cfg.get("state_quantizer") is not None:
             # Calculate state embedding dimension
             if self.encoder.latent_ndim == 1:
                 state_emb_dim = self.encoder.emb_dim
@@ -245,7 +291,7 @@ class Trainer:
             )
             print(f"State quantizer initialized with {self.cfg.get('state_vocabulary_size', 128)} codes")
 
-        if self.cfg.get("action_quantizer") is not None:
+        if self.cfg.get("quantize", True) and self.cfg.get("action_quantizer") is not None:
             self.action_quantizer = hydra.utils.instantiate(
                 self.cfg.action_quantizer,
                 embedding_dim=action_emb_dim,
@@ -261,7 +307,7 @@ class Trainer:
         else:
             self.action_encoder = self.accelerator.prepare(self.action_encoder)
 
-        if self.accelerator.is_main_process:
+        if self.accelerator.is_main_process and self.wandb_run is not None:
             self.wandb_run.watch(self.action_encoder)
 
         # initialize predictor
@@ -279,9 +325,8 @@ class Trainer:
             if self.predictor is None:
                 self.predictor = hydra.utils.instantiate(
                     self.cfg.predictor,
-                    num_patches=num_patches,
                     num_frames=self.cfg.num_hist,
-                    dim=self.encoder.emb_dim
+                    emb_dim=self.encoder.emb_dim
                     + (action_emb_dim * self.cfg.num_action_repeat)
                     * (self.cfg.concat_dim),
                 )
@@ -326,12 +371,127 @@ class Trainer:
             num_action_repeat=self.cfg.num_action_repeat,
         )
 
+    def create_scheduler(self, optimizer, base_lr):
+        """
+        Create a learning rate scheduler based on configuration.
+
+        Args:
+            optimizer: The optimizer to schedule
+            base_lr: Base learning rate for the optimizer
+
+        Returns:
+            scheduler or None if scheduler type is "none"
+        """
+        scheduler_cfg = self.cfg.training.get("scheduler", {})
+        scheduler_type = scheduler_cfg.get("type", "none")
+
+        if scheduler_type == "none":
+            return None
+
+        total_epochs = self.total_epochs
+        warmup_epochs = scheduler_cfg.get("warmup_epochs", 5)
+        warmup_start_lr_factor = scheduler_cfg.get("warmup_start_lr_factor", 0.01)
+        min_lr_factor = scheduler_cfg.get("min_lr_factor", 0.0)
+
+        if scheduler_type == "cosine_with_warmup":
+            # Create cosine annealing scheduler
+            cosine_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                optimizer,
+                T_max=total_epochs - warmup_epochs,
+                eta_min=base_lr * min_lr_factor
+            )
+
+            # Create warmup scheduler
+            warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
+                optimizer,
+                start_factor=warmup_start_lr_factor,
+                end_factor=1.0,
+                total_iters=warmup_epochs
+            )
+
+            # Combine schedulers
+            scheduler = torch.optim.lr_scheduler.SequentialLR(
+                optimizer,
+                schedulers=[warmup_scheduler, cosine_scheduler],
+                milestones=[warmup_epochs]
+            )
+
+        elif scheduler_type == "linear_with_warmup":
+            # Create linear decay scheduler
+            linear_scheduler = torch.optim.lr_scheduler.LinearLR(
+                optimizer,
+                start_factor=1.0,
+                end_factor=min_lr_factor,
+                total_iters=total_epochs - warmup_epochs
+            )
+
+            # Create warmup scheduler
+            warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
+                optimizer,
+                start_factor=warmup_start_lr_factor,
+                end_factor=1.0,
+                total_iters=warmup_epochs
+            )
+
+            # Combine schedulers
+            scheduler = torch.optim.lr_scheduler.SequentialLR(
+                optimizer,
+                schedulers=[warmup_scheduler, linear_scheduler],
+                milestones=[warmup_epochs]
+            )
+
+        elif scheduler_type == "cosine":
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                optimizer,
+                T_max=total_epochs,
+                eta_min=base_lr * min_lr_factor
+            )
+
+        elif scheduler_type == "linear":
+            scheduler = torch.optim.lr_scheduler.LinearLR(
+                optimizer,
+                start_factor=1.0,
+                end_factor=min_lr_factor,
+                total_iters=total_epochs
+            )
+
+        elif scheduler_type == "step":
+            step_size = scheduler_cfg.get("step_size", 30)
+            gamma = scheduler_cfg.get("gamma", 0.1)
+            scheduler = torch.optim.lr_scheduler.StepLR(
+                optimizer,
+                step_size=step_size,
+                gamma=gamma
+            )
+
+        elif scheduler_type == "exponential":
+            gamma = scheduler_cfg.get("gamma", 0.95)
+            scheduler = torch.optim.lr_scheduler.ExponentialLR(
+                optimizer,
+                gamma=gamma
+            )
+
+        else:
+            raise ValueError(f"Unknown scheduler type: {scheduler_type}")
+
+        return scheduler
+
     def init_optimizers(self):
+        # Initialize schedulers to None first
+        self.encoder_scheduler = None
+        self.predictor_scheduler = None
+        self.action_encoder_scheduler = None
+        self.decoder_scheduler = None
+
         self.encoder_optimizer = torch.optim.Adam(
             self.encoder.parameters(),
             lr=self.cfg.training.encoder_lr,
         )
         self.encoder_optimizer = self.accelerator.prepare(self.encoder_optimizer)
+        self.encoder_scheduler = self.create_scheduler(
+            self.encoder_optimizer, self.cfg.training.encoder_lr
+        )
+
         if self.cfg.has_predictor:
             self.predictor_optimizer = torch.optim.AdamW(
                 self.predictor.parameters(),
@@ -339,6 +499,9 @@ class Trainer:
             )
             self.predictor_optimizer = self.accelerator.prepare(
                 self.predictor_optimizer
+            )
+            self.predictor_scheduler = self.create_scheduler(
+                self.predictor_optimizer, self.cfg.training.predictor_lr
             )
 
             self.action_encoder_optimizer = torch.optim.AdamW(
@@ -348,12 +511,18 @@ class Trainer:
             self.action_encoder_optimizer = self.accelerator.prepare(
                 self.action_encoder_optimizer
             )
+            self.action_encoder_scheduler = self.create_scheduler(
+                self.action_encoder_optimizer, self.cfg.training.action_encoder_lr
+            )
 
         if self.cfg.has_decoder:
             self.decoder_optimizer = torch.optim.Adam(
                 self.decoder.parameters(), lr=self.cfg.training.decoder_lr
             )
             self.decoder_optimizer = self.accelerator.prepare(self.decoder_optimizer)
+            self.decoder_scheduler = self.create_scheduler(
+                self.decoder_optimizer, self.cfg.training.decoder_lr
+            )
 
 
     def monitor_jobs(self, lock):
@@ -394,8 +563,22 @@ class Trainer:
             self.train()
             self.accelerator.wait_for_everyone()
             self.val()
+
+            # Step schedulers after each epoch
+            if self.encoder_scheduler is not None:
+                self.encoder_scheduler.step()
+            if self.cfg.has_predictor:
+                if self.predictor_scheduler is not None:
+                    self.predictor_scheduler.step()
+                if self.action_encoder_scheduler is not None:
+                    self.action_encoder_scheduler.step()
+            if self.cfg.has_decoder:
+                if self.decoder_scheduler is not None:
+                    self.decoder_scheduler.step()
+
             self.logs_flash(step=self.epoch)
-            if self.epoch % self.cfg.training.save_every_x_epoch == 0:
+            # Save checkpoint every N epochs OR on the final epoch
+            if self.epoch % self.cfg.training.save_every_x_epoch == 0 or self.epoch == self.total_epochs:
                 ckpt_path, model_name, model_epoch = self.save_ckpt()
                 # main thread only: launch planning jobs on the saved ckpt
                 if (
@@ -477,6 +660,20 @@ class Trainer:
                 self.action_encoder_optimizer.zero_grad()
 
             self.accelerator.backward(loss)
+
+            # Apply gradient clipping if configured
+            max_grad_norm = self.cfg.training.get("max_grad_norm", None)
+            if max_grad_norm is not None:
+                if self.model.train_encoder:
+                    encoder_grad_norm = self.accelerator.clip_grad_norm_(self.encoder.parameters(), max_grad_norm)
+                    # Debug: Log encoder gradient norm occasionally
+                    if i == 0 and self.epoch % 5 == 0:
+                        log.info(f"🔍 Encoder gradient norm (before clip): {encoder_grad_norm:.6f}")
+                if self.cfg.has_decoder and self.model.train_decoder:
+                    self.accelerator.clip_grad_norm_(self.decoder.parameters(), max_grad_norm)
+                if self.cfg.has_predictor and self.model.train_predictor:
+                    self.accelerator.clip_grad_norm_(self.predictor.parameters(), max_grad_norm)
+                    self.accelerator.clip_grad_norm_(self.action_encoder.parameters(), max_grad_norm)
 
             if self.model.train_encoder:
                 self.encoder_optimizer.step()
@@ -726,8 +923,8 @@ class Trainer:
                         ]
 
                 if self.cfg.has_decoder:
-                    visuals = self.model.decode_obs(z_obses)[0]["visual"]
-                    imgs = torch.cat([obs["visual"], visuals[0].cpu()], dim=0)
+                    visuals = self.model.decode_obs(z_obses)["visual"][0]
+                    imgs = torch.cat([obs["visual"], visuals.cpu()], dim=0)
                     self.plot_imgs(
                         imgs,
                         obs["visual"].shape[0],
@@ -756,10 +953,57 @@ class Trainer:
             to_log = sum / count
             epoch_log[key] = to_log
         epoch_log["epoch"] = step
-        log.info(f"Epoch {self.epoch}  Training loss: {epoch_log['train_loss']:.4f}  \
-                Validation loss: {epoch_log['val_loss']:.4f}")
 
-        if self.accelerator.is_main_process:
+        # Log current learning rates
+        epoch_log["lr/encoder"] = self.encoder_optimizer.param_groups[0]['lr']
+        if self.cfg.has_predictor:
+            epoch_log["lr/predictor"] = self.predictor_optimizer.param_groups[0]['lr']
+            epoch_log["lr/action_encoder"] = self.action_encoder_optimizer.param_groups[0]['lr']
+        if self.cfg.has_decoder:
+            epoch_log["lr/decoder"] = self.decoder_optimizer.param_groups[0]['lr']
+
+        # Compute and log collapse diagnostic metrics
+        if self.cfg.has_predictor and "train_z_loss" in epoch_log and "train_z_collapse_loss" in epoch_log:
+            z_loss = epoch_log["train_z_loss"]
+            z_collapse = epoch_log["train_z_collapse_loss"]
+
+            # Prediction improvement ratio: how much better is prediction vs naive baseline
+            # > 1.0 means prediction is worse than baseline (bad)
+            # < 1.0 means prediction is better than baseline (good)
+            # < 0.5 means prediction is significantly better (very good)
+            if z_collapse > 1e-6:  # Avoid division by zero
+                epoch_log["diagnostics/prediction_vs_collapse_ratio"] = z_loss / z_collapse
+
+            # Log warning flags
+            if z_collapse < 0.01:
+                epoch_log["diagnostics/collapse_warning"] = 1.0  # Potential representation collapse
+            else:
+                epoch_log["diagnostics/collapse_warning"] = 0.0
+
+        # Log key metrics with emphasis on collapse detection
+        log_msg = f"Epoch {self.epoch}  Training loss: {epoch_log['train_loss']:.4f}  Validation loss: {epoch_log['val_loss']:.4f}"
+
+        # Add collapse loss info if available
+        if "train_z_collapse_loss" in epoch_log:
+            z_collapse = epoch_log["train_z_collapse_loss"]
+            z_loss = epoch_log.get("train_z_loss", 0)
+            log_msg += f"\n  └─ z_collapse_loss: {z_collapse:.6f}"
+            log_msg += f"  |  z_loss: {z_loss:.6f}"
+
+            # Warn if collapse detected
+            if z_collapse < 0.01:
+                log_msg += "  |  ⚠️  COLLAPSE DETECTED!"
+            elif z_collapse < 0.1:
+                log_msg += "  |  ⚠️  Low diversity (potential collapse)"
+            elif 0.5 <= z_collapse <= 2.0:
+                log_msg += "  |  ✅ Healthy range"
+
+            if z_collapse > 1e-6 and z_loss / z_collapse < 1.0:
+                log_msg += f"  |  Ratio: {z_loss/z_collapse:.2f} (good prediction)"
+
+        log.info(log_msg)
+
+        if self.accelerator.is_main_process and self.wandb_run is not None:
             self.wandb_run.log(epoch_log)
         self.epoch_log = OrderedDict()
 
@@ -838,4 +1082,5 @@ def main(cfg: OmegaConf):
 
 
 if __name__ == "__main__":
+
     main()

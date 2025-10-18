@@ -1,0 +1,111 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Train Quantised DINO World Model",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/train.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--config-name", "train.yaml",
+                "env=wall",
+                "frameskip=5",
+                "num_hist=1",
+                "training.epochs=25",
+                "quantize=True",
+                "model.vcreg_loss_weight=10.0",
+                "encoder=conv2d",
+                "predictor=conv3d",
+                "decoder=vqvae",
+                "disable_wandb=true"
+            ],
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "DATASET_DIR": "/scratch/yp2693/world_models/datasets/"
+            },
+            "stopOnEntry": false,
+            "justMyCode": false,
+            "python": "/scratch/yp2693/world_models/penv/bin/python"
+        },
+        {
+            "name": "Train (Custom Args)",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/train.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--config-name", "train.yaml",
+                "disable_wandb=true"
+            ],
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "DATASET_DIR": "/scratch/yp2693/world_models/datasets/"
+            },
+            "stopOnEntry": false,
+            "justMyCode": false,
+            "python": "/scratch/yp2693/world_models/penv/bin/python"
+        },
+        {
+            "name": "Debug Plan",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/plan.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--config-name=plan"
+            ],
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "DATASET_DIR": "/scratch/yp2693/world_models/datasets/"
+            },
+            "stopOnEntry": false,
+            "justMyCode": false,
+            "python": "/scratch/yp2693/world_models/penv/bin/python"
+        },
+        {
+            "name": "Python Debugger: Current File",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "stopOnEntry": false,
+            "justMyCode": false,
+            "python": "/scratch/yp2693/world_models/penv/bin/python"
+        },
+        {
+            "name": "Accelerate Launch Train",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "accelerate.commands.launch",
+            "console": "integratedTerminal",
+            "args": [
+                "train.py",
+                "--config-name", "train.yaml",
+                "env=wall",
+                "frameskip=5",
+                "num_hist=1",
+                "training.epochs=25",
+                "quantize=True",
+                "model.vcreg_loss_weight=1.0",
+                "encoder=conv2d",
+                "predictor=conv3d",
+                "decoder=vqvae",
+                "model.use_ema_teacher=False",
+                "disable_wandb=true"
+            ],
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "DATASET_DIR": "/scratch/yp2693/world_models/datasets/",
+                "WANDB_CACHE_DIR": "/scratch/yp2693/world_models/wandb_cache"
+            },
+            "stopOnEntry": false,
+            "justMyCode": false,
+            "python": "/scratch/yp2693/world_models/penv/bin/python"
+        }
+    ]
+}
