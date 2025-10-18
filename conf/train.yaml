@@ -87,6 +87,7 @@ action_vocabulary_size: 128
 debug: False
 disable_wandb: False
 force_restart: False  # Set to True to ignore existing checkpoints and start fresh
+resume_from: null     # Path to checkpoint directory to resume from (e.g., outputs/2025-10-18/18-45-02)
 
 # Planning params for planning eval jobs launched during training
 plan_settings: 

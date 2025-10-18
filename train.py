@@ -243,19 +243,42 @@ class Trainer:
             log.warning("Keys not found in ckpt: %s", not_in_ckpt)
 
     def init_models(self):
-        model_ckpt = Path(self.cfg.saved_folder) / "checkpoints" / "model_latest.pth"
         force_restart = self.cfg.get("force_restart", False)
+        resume_from = self.cfg.get("resume_from", None)
 
-        if model_ckpt.exists() and not force_restart:
-            log.info(f"⚠️  Found existing checkpoint: {model_ckpt}")
-            log.info(f"⚠️  Loading checkpoint (set force_restart=True to start fresh)")
-            self.load_ckpt(model_ckpt)
-            log.info(f"Resuming from epoch {self.epoch}: {model_ckpt}")
-        elif model_ckpt.exists() and force_restart:
-            log.warning(f"🔄 Found checkpoint but force_restart=True, starting fresh!")
-            log.warning(f"Old checkpoint at: {model_ckpt}")
+        # Priority 1: Check for explicit resume_from parameter
+        if resume_from is not None and not force_restart:
+            resume_ckpt = Path(resume_from)
+            if not resume_ckpt.is_absolute():
+                # If relative path, make it absolute from project root
+                resume_ckpt = Path.cwd() / resume_ckpt
+
+            # If resume_from points to a directory, look for checkpoints/model_latest.pth
+            if resume_ckpt.is_dir():
+                resume_ckpt = resume_ckpt / "checkpoints" / "model_latest.pth"
+
+            if resume_ckpt.exists():
+                log.info(f"📂 Loading checkpoint from resume_from: {resume_ckpt}")
+                self.load_ckpt(resume_ckpt)
+                log.info(f"✅ Resumed from epoch {self.epoch}: {resume_ckpt}")
+            else:
+                log.error(f"❌ resume_from specified but checkpoint not found: {resume_ckpt}")
+                raise FileNotFoundError(f"Checkpoint not found: {resume_ckpt}")
+
+        # Priority 2: Check for checkpoint in current saved_folder (default Hydra behavior)
         else:
-            log.info("✅ Starting training from scratch (no checkpoint found)")
+            model_ckpt = Path(self.cfg.saved_folder) / "checkpoints" / "model_latest.pth"
+
+            if model_ckpt.exists() and not force_restart:
+                log.info(f"⚠️  Found existing checkpoint: {model_ckpt}")
+                log.info(f"⚠️  Loading checkpoint (set force_restart=True to start fresh)")
+                self.load_ckpt(model_ckpt)
+                log.info(f"Resuming from epoch {self.epoch}: {model_ckpt}")
+            elif model_ckpt.exists() and force_restart:
+                log.warning(f"🔄 Found checkpoint but force_restart=True, starting fresh!")
+                log.warning(f"Old checkpoint at: {model_ckpt}")
+            else:
+                log.info("✅ Starting training from scratch (no checkpoint found)")
 
         # initialize encoder
         if self.encoder is None:
@@ -395,9 +418,11 @@ class Trainer:
 
         if scheduler_type == "cosine_with_warmup":
             # Create cosine annealing scheduler
+            # Ensure T_max is at least 1 to avoid division by zero
+            T_max = max(1, total_epochs - warmup_epochs)
             cosine_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
                 optimizer,
-                T_max=total_epochs - warmup_epochs,
+                T_max=T_max,
                 eta_min=base_lr * min_lr_factor
             )
 
@@ -687,7 +712,8 @@ class Trainer:
 
             loss_components = self.accelerator.gather_for_metrics(loss_components)
             loss_components = {
-                key: value.mean().item() for key, value in loss_components.items()
+                key: value.mean().item() if hasattr(value, 'mean') else float(value)
+                for key, value in loss_components.items()
             }
             if self.cfg.has_decoder and plot:
                 # only eval images when plotting due to speed
@@ -701,7 +727,8 @@ class Trainer:
 
                     err_logs = self.accelerator.gather_for_metrics(err_logs)
                     err_logs = {
-                        key: value.mean().item() for key, value in err_logs.items()
+                        key: value.mean().item() if hasattr(value, 'mean') else float(value)
+                        for key, value in err_logs.items()
                     }
                     err_logs = {f"train_{k}": [v] for k, v in err_logs.items()}
 
@@ -782,7 +809,8 @@ class Trainer:
 
             loss_components = self.accelerator.gather_for_metrics(loss_components)
             loss_components = {
-                key: value.mean().item() for key, value in loss_components.items()
+                key: value.mean().item() if hasattr(value, 'mean') else float(value)
+                for key, value in loss_components.items()
             }
 
             if self.cfg.has_decoder and plot:
@@ -797,7 +825,8 @@ class Trainer:
 
                     err_logs = self.accelerator.gather_for_metrics(err_logs)
                     err_logs = {
-                        key: value.mean().item() for key, value in err_logs.items()
+                        key: value.mean().item() if hasattr(value, 'mean') else float(value)
+                        for key, value in err_logs.items()
                     }
                     err_logs = {f"val_{k}": [v] for k, v in err_logs.items()}
 
@@ -1000,6 +1029,32 @@ class Trainer:
 
             if z_collapse > 1e-6 and z_loss / z_collapse < 1.0:
                 log_msg += f"  |  Ratio: {z_loss/z_collapse:.2f} (good prediction)"
+
+        # Add codebook utilization info if quantization is enabled
+        if "train_state_codebook_utilization" in epoch_log:
+            state_util = epoch_log["train_state_codebook_utilization"]
+            state_n_unique = int(epoch_log.get("train_state_codebook_n_unique", 0))
+            log_msg += f"\n  └─ State Codebook: {state_util:.1%} utilized ({state_n_unique} codes)"
+
+            # Warn about codebook collapse
+            if state_util < 0.25:
+                log_msg += "  |  🔴 SEVERE: Codebook collapse! (<25%)"
+            elif state_util < 0.50:
+                log_msg += "  |  ⚠️  WARNING: Low utilization (<50%)"
+            elif state_util >= 0.75:
+                log_msg += "  |  ✅ Good utilization (>75%)"
+
+        if "train_action_codebook_utilization" in epoch_log:
+            action_util = epoch_log["train_action_codebook_utilization"]
+            action_n_unique = int(epoch_log.get("train_action_codebook_n_unique", 0))
+            log_msg += f"\n  └─ Action Codebook: {action_util:.1%} utilized ({action_n_unique} codes)"
+
+            if action_util < 0.25:
+                log_msg += "  |  🔴 SEVERE: Codebook collapse! (<25%)"
+            elif action_util < 0.50:
+                log_msg += "  |  ⚠️  WARNING: Low utilization (<50%)"
+            elif action_util >= 0.75:
+                log_msg += "  |  ✅ Good utilization (>75%)"
 
         log.info(log_msg)
 

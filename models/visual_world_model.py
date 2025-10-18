@@ -74,13 +74,28 @@ class VWorldModel(nn.Module):
 
     def train(self, mode=True):
         super().train(mode)
+        # Explicitly set train/eval mode for each component based on flags
         if self.train_encoder:
             self.encoder.train(mode)
-        if self.predictor is not None and self.train_predictor:
-            self.predictor.train(mode)
+        else:
+            self.encoder.eval()  # Force eval mode when frozen to freeze BatchNorm stats
+
+        if self.predictor is not None:
+            if self.train_predictor:
+                self.predictor.train(mode)
+            else:
+                self.predictor.eval()
+
+        # Action encoder always trains in this implementation
         self.action_encoder.train(mode)
-        if self.decoder is not None and self.train_decoder:
-            self.decoder.train(mode)
+
+        if self.decoder is not None:
+            if self.train_decoder:
+                self.decoder.train(mode)
+            else:
+                self.decoder.eval()
+
+        # Quantizers always train when present
         if self.state_quantizer is not None:
             self.state_quantizer.train(mode)
         if self.action_quantizer is not None:
@@ -273,7 +288,22 @@ class VWorldModel(nn.Module):
 
         # Optionally quantize the source embeddings
         if self.quantize:
-            z_src, enc_quantization_loss, _ = self.quantize_embeddings(z_src)
+            z_src, enc_quantization_loss, enc_quantization_indices = self.quantize_embeddings(z_src)
+
+            # Compute codebook utilization for monitoring
+            if 'state' in enc_quantization_indices:
+                state_util, state_n_unique = self.state_quantizer.compute_codebook_utilization(
+                    enc_quantization_indices['state']
+                )
+                loss_components["state_codebook_utilization"] = state_util
+                loss_components["state_codebook_n_unique"] = state_n_unique
+
+            if 'action' in enc_quantization_indices:
+                action_util, action_n_unique = self.action_quantizer.compute_codebook_utilization(
+                    enc_quantization_indices['action']
+                )
+                loss_components["action_codebook_utilization"] = action_util
+                loss_components["action_codebook_n_unique"] = action_n_unique
 
         # Observations of the target are encoded by the teacher network (no grad)
         with torch.no_grad():
@@ -298,9 +328,11 @@ class VWorldModel(nn.Module):
                 loss_components["vcreg_cov_loss"] = vcreg_loss_components["cov_loss"]
                 loss_components["vcreg_loss"] = vcreg_loss
 
-            if self.quantize:
-                loss = loss + self.quantization_loss_weight * enc_quantization_loss
-                loss_components["quantization_loss"] = enc_quantization_loss
+        # Quantization loss should be computed even when encoder is frozen
+        # This allows the quantizers to learn to represent the (frozen) encoder outputs
+        if self.quantize:
+            loss = loss + self.quantization_loss_weight * enc_quantization_loss
+            loss_components["quantization_loss"] = enc_quantization_loss
 
         # If the world model has a predictor, we compute the prediction
         if self.predictor is not None:

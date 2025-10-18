@@ -44,10 +44,10 @@ class Conv2DEncoder(nn.Module):
             in_channels = out_channels
         
         # Final projection to latent space
-        # Note: No ReLU after final projection to allow negative features
+        # Note: No ReLU or BatchNorm after final projection
+        # BatchNorm here causes vanishing gradients with quantization + VCReg
         layers.extend([
             nn.Conv2d(in_channels, emb_dim, kernel_size=1),
-            nn.BatchNorm2d(emb_dim),
         ])
         
         self.encoder = nn.Sequential(*layers)

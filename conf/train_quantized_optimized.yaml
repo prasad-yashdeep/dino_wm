@@ -1,0 +1,44 @@
+# Optimized configuration for quantized world model training
+# Based on analysis of representation collapse
+
+defaults:
+  - train  # Inherit from base train.yaml
+  - _self_
+
+# CRITICAL: Larger vocabulary to prevent collapse
+state_vocabulary_size: 1024  # 8x increase from 128
+action_vocabulary_size: 128
+
+training:
+  # Matched learning rates to prevent predictor from racing ahead
+  encoder_lr: 2e-4       # Increased from 1e-4
+  decoder_lr: 3e-4
+  predictor_lr: 2e-4     # REDUCED from 5e-4 (was 5x encoder, now 1x)
+  action_encoder_lr: 2e-4
+
+  # Faster warmup to reach full LR before collapse sets in
+  scheduler:
+    type: "cosine_with_warmup"
+    warmup_epochs: 2      # Reduced from 5 (get to full LR faster)
+    warmup_start_lr_factor: 0.1  # Start higher (0.1x instead of 0.01x)
+    min_lr_factor: 0.1    # Don't decay to zero (keep 10% of base LR)
+
+  # Gradient clipping to handle discrete gradients
+  max_grad_norm: 2.0     # Increased from 1.0 (quantization gradients can be spiky)
+
+  # More frequent checkpoints to monitor collapse
+  save_every_x_epoch: 1
+
+model:
+  # Increase VCReg weight to fight collapse harder
+  vcreg_loss_weight: 20.0  # Doubled from 10.0
+
+  # Balance quantization loss
+  quantization_loss_weight: 0.5  # Reduced from 1.0 (prioritize VCReg over codebook commitment)
+
+# Enable quantization
+quantize: True
+
+# Debugging
+debug: False
+disable_wandb: False  # Enable to track experiments

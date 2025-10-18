@@ -1,0 +1,10 @@
+_target_: models.quantizer.residual_vq.ResidualVectorQuantizer
+n_embed: 32           # 32 codes per layer
+n_layers: 3           # 3 residual layers
+embedding_dim: 64
+commitment_cost: 0.25
+
+# Effective vocabulary: 32^3 = 32,768 codes
+# Layer 1: Coarse quantization (main structure)
+# Layer 2: Refine residuals (details)
+# Layer 3: Further refinement (fine details)

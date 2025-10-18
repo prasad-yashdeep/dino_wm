@@ -2,3 +2,6 @@ __pycache__
 *.pyc
 outputs
 plan_outputs
+docs
+logs_archive
+scripts

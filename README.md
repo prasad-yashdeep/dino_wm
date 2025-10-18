@@ -5,6 +5,34 @@
 
 ![teaser_figure](assets/intro.png)
 
+---
+
+## 📁 Project Organization
+
+This repository is organized into the following directories:
+
+- **[`scripts/`](scripts/)** - All training, testing, experiment, and analysis scripts
+  - [`scripts/tests/`](scripts/tests/) - Quick validation tests (3 epochs, small dataset)
+  - [`scripts/training/`](scripts/training/) - Production 3-stage training pipeline
+  - [`scripts/experiments/`](scripts/experiments/) - Experimental comparison scripts
+  - [`scripts/analysis/`](scripts/analysis/) - Analysis and debugging tools
+
+- **[`docs/`](docs/)** - Comprehensive documentation and analysis reports
+  - [Collapse Analysis Report](docs/COLLAPSE_ANALYSIS_REPORT.md)
+  - [Experiment Summary](docs/EXPERIMENT_SUMMARY.md)
+  - [Final Solution Guide](docs/FINAL_SOLUTION.md)
+  - [Implementation Summary](docs/IMPLEMENTATION_SUMMARY.md)
+
+- **`logs_archive/`** - Archived training and experiment logs
+
+- **`models/`** - Model architecture implementations (encoder, decoder, quantizer, etc.)
+
+- **`conf/`** - Hydra configuration files
+
+See [scripts/README.md](scripts/README.md) and [docs/README.md](docs/README.md) for detailed documentation.
+
+---
+
 # Getting Started
 
 1. [Installation](#installation)

@@ -11,7 +11,9 @@ class VectorQuantizer(nn.Module):
         self.commitment_cost = commitment_cost
 
         self.embedding = nn.Embedding(n_embed, embedding_dim)
-        self.embedding.weight.data.uniform_(-1 / n_embed, 1 / n_embed)
+        # Initialize codebook with reasonable scale to match typical encoder outputs
+        # Encoder outputs typically have std ~ 0.5-1.0, so initialize uniformly in [-1, 1]
+        self.embedding.weight.data.uniform_(-1.0, 1.0)
 
     def forward(self, z_e):
         """Vector quantization step.
@@ -47,3 +49,19 @@ class VectorQuantizer(nn.Module):
         z_q_st = z_e + (z_q - z_e).detach()
 
         return z_q_st, loss, encoding_indices.view(z_e.shape[:-1])
+
+    def compute_codebook_utilization(self, encoding_indices):
+        """Compute what percentage of the codebook is actually being used.
+
+        Args:
+            encoding_indices (torch.Tensor): Indices from quantization step
+
+        Returns:
+            utilization (float): Percentage of codebook entries used (0.0 to 1.0)
+            n_unique (int): Number of unique codes used
+        """
+        unique_codes = torch.unique(encoding_indices)
+        n_unique = len(unique_codes)
+        utilization = n_unique / self.n_embed
+
+        return utilization, n_unique

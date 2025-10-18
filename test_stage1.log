@@ -1,0 +1,68 @@
+[2025-10-18 19:51:37,018][__main__][INFO] - Model saved dir: /scratch/yp2693/world_models/quantised_dinowm/outputs/2025-10-18/19-51-36
+[2025-10-18 19:51:38,956][__main__][INFO] - rank: 0  model_name: 2025-10-18/19-51-36_wall_f5_h1_p1
+[2025-10-18 19:51:38,956][__main__][INFO] - device: cuda   model_name: 2025-10-18/19-51-36_wall_f5_h1_p1
+[2025-10-18 19:51:38,957][__main__][INFO] - Wandb logging disabled
+[2025-10-18 19:51:38,964][__main__][INFO] - Loading dataset from /scratch/yp2693/world_models/datasets//wall_single ...
+Loading wall dataset...
+[[42, 17, 30, 34, 20, 25, 0, 8, 36, 18, 28, 39, 3, 2, 41, 1, 37, 6, 14, 12, 11, 32, 43, 16, 5, 38, 31, 44, 26, 45, 15, 47, 4, 10, 21, 19, 33, 27, 13, 48, 46, 23, 22, 35, 7], [24, 49, 29, 40, 9]]
+[2025-10-18 19:51:39,019][__main__][INFO] - dataloader batch size: 32
+[2025-10-18 19:51:39,019][__main__][INFO] - Train encoder, predictor, decoder:            True            True            True
+[2025-10-18 19:51:39,020][__main__][INFO] - ✅ Starting training from scratch (no checkpoint found)
+Action encoder type: <class 'models.action_encoder.proprio.ProprioEncoder'>
+num_action_repeat: 1
+action encoder: ProprioEncoder(
+  (encoder): Sequential(
+    (0): Linear(in_features=10, out_features=64, bias=True)
+    (1): ReLU(inplace=True)
+    (2): Linear(in_features=64, out_features=10, bias=True)
+  )
+)
+action_dim: 10, after repeat: 10
+emb_dim: 74
+State quantizer: None
+Action quantizer: None
+Model emb_dim:  74
+Using VCReg Loss: True
+Epoch 1 Train:   0%|          | 0/58 [00:00<?, ?it/s]Epoch 1 Train:   2%|▏         | 1/58 [00:05<05:19,  5.60s/it]Epoch 1 Train:   5%|▌         | 3/58 [00:05<01:22,  1.50s/it]Epoch 1 Train:   9%|▊         | 5/58 [00:05<00:40,  1.31it/s]Epoch 1 Train:  12%|█▏        | 7/58 [00:05<00:23,  2.14it/s]Epoch 1 Train:  16%|█▌        | 9/58 [00:06<00:15,  3.16it/s]Epoch 1 Train:  19%|█▉        | 11/58 [00:06<00:10,  4.36it/s]Epoch 1 Train:  22%|██▏       | 13/58 [00:06<00:07,  5.69it/s]Epoch 1 Train:  26%|██▌       | 15/58 [00:06<00:06,  7.10it/s]Epoch 1 Train:  29%|██▉       | 17/58 [00:06<00:04,  8.38it/s]Epoch 1 Train:  33%|███▎      | 19/58 [00:06<00:04,  9.65it/s]Epoch 1 Train:  36%|███▌      | 21/58 [00:06<00:03, 10.74it/s]Epoch 1 Train:  40%|███▉      | 23/58 [00:07<00:02, 11.78it/s]Epoch 1 Train:  43%|████▎     | 25/58 [00:07<00:02, 12.51it/s]Epoch 1 Train:  47%|████▋     | 27/58 [00:07<00:02, 13.08it/s]Epoch 1 Train:  50%|█████     | 29/58 [00:07<00:02, 13.47it/s]Epoch 1 Train:  53%|█████▎    | 31/58 [00:07<00:01, 13.85it/s]Epoch 1 Train:  57%|█████▋    | 33/58 [00:07<00:01, 13.94it/s]Epoch 1 Train:  60%|██████    | 35/58 [00:07<00:01, 14.08it/s]Epoch 1 Train:  64%|██████▍   | 37/58 [00:08<00:01, 14.06it/s]Epoch 1 Train:  67%|██████▋   | 39/58 [00:08<00:01, 14.42it/s]Epoch 1 Train:  71%|███████   | 41/58 [00:08<00:01, 14.71it/s]Epoch 1 Train:  74%|███████▍  | 43/58 [00:08<00:01, 14.91it/s]Epoch 1 Train:  78%|███████▊  | 45/58 [00:08<00:00, 15.02it/s]Epoch 1 Train:  81%|████████  | 47/58 [00:08<00:00, 15.17it/s]Epoch 1 Train:  84%|████████▍ | 49/58 [00:08<00:00, 15.21it/s]Epoch 1 Train:  88%|████████▊ | 51/58 [00:08<00:00, 15.31it/s]Epoch 1 Train:  91%|█████████▏| 53/58 [00:09<00:00, 15.24it/s]Epoch 1 Train:  95%|█████████▍| 55/58 [00:09<00:00, 15.35it/s]Epoch 1 Train:  98%|█████████▊| 57/58 [00:09<00:00, 15.40it/s]Epoch 1 Train: 100%|██████████| 58/58 [00:09<00:00,  5.90it/s]
+Epoch 1 Valid:   0%|          | 0/7 [00:00<?, ?it/s]Epoch 1 Valid:  14%|█▍        | 1/7 [00:04<00:25,  4.20s/it]Epoch 1 Valid:  57%|█████▋    | 4/7 [00:04<00:02,  1.21it/s]Epoch 1 Valid: 100%|██████████| 7/7 [00:04<00:00,  2.29it/s]Epoch 1 Valid: 100%|██████████| 7/7 [00:04<00:00,  1.51it/s]
+
+================================================================================
+🔍 COLLAPSE LOSS DEBUG (First batch sample)
+================================================================================
+z_src_obs shape: torch.Size([32, 1, 14, 14, 64])
+z_tgt_obs shape: torch.Size([32, 1, 14, 14, 64])
+
+z_src_obs stats:
+  Mean: 0.003611
+  Std:  0.751732
+  Min:  -17.776939
+  Max:  23.417675
+
+z_tgt_obs stats:
+  Mean: 0.002762
+  Std:  0.729213
+  Min:  -15.993155
+  Max:  24.530579
+
+Difference (z_src - z_tgt):
+  Mean abs diff: 0.093603
+  Max abs diff:  24.932751
+
+Losses:
+  z_collapse_loss: 0.4468975365
+  z_visual_loss:   0.4027710557
+================================================================================
+
+[2025-10-18 19:51:56,621][__main__][INFO] - Epoch 1  Training loss: 5.6569  Validation loss: 4.3689
+  └─ z_collapse_loss: 0.099733  |  z_loss: 0.159579  |  ⚠️  Low diversity (potential collapse)
+[2025-10-18 19:51:56,968][__main__][INFO] - Saved model to /scratch/yp2693/world_models/quantised_dinowm/outputs/2025-10-18/19-51-36
+Epoch 2 Train:   0%|          | 0/58 [00:00<?, ?it/s]Epoch 2 Train:   2%|▏         | 1/58 [00:05<04:56,  5.21s/it]Epoch 2 Train:   5%|▌         | 3/58 [00:05<01:16,  1.40s/it]Epoch 2 Train:   9%|▊         | 5/58 [00:05<00:37,  1.40it/s]Epoch 2 Train:  12%|█▏        | 7/58 [00:05<00:22,  2.28it/s]Epoch 2 Train:  16%|█▌        | 9/58 [00:05<00:14,  3.34it/s]Epoch 2 Train:  19%|█▉        | 11/58 [00:05<00:10,  4.58it/s]Epoch 2 Train:  22%|██▏       | 13/58 [00:06<00:07,  5.92it/s]Epoch 2 Train:  26%|██▌       | 15/58 [00:06<00:05,  7.33it/s]Epoch 2 Train:  29%|██▉       | 17/58 [00:06<00:04,  8.52it/s]Epoch 2 Train:  33%|███▎      | 19/58 [00:06<00:04,  9.71it/s]Epoch 2 Train:  36%|███▌      | 21/58 [00:06<00:03, 10.88it/s]Epoch 2 Train:  40%|███▉      | 23/58 [00:06<00:02, 11.76it/s]Epoch 2 Train:  43%|████▎     | 25/58 [00:06<00:02, 12.24it/s]Epoch 2 Train:  47%|████▋     | 27/58 [00:07<00:02, 12.67it/s]Epoch 2 Train:  50%|█████     | 29/58 [00:07<00:02, 13.10it/s]Epoch 2 Train:  53%|█████▎    | 31/58 [00:07<00:01, 13.56it/s]Epoch 2 Train:  57%|█████▋    | 33/58 [00:07<00:01, 13.91it/s]Epoch 2 Train:  60%|██████    | 35/58 [00:07<00:01, 14.16it/s]Epoch 2 Train:  64%|██████▍   | 37/58 [00:07<00:01, 14.46it/s]Epoch 2 Train:  67%|██████▋   | 39/58 [00:07<00:01, 14.71it/s]Epoch 2 Train:  71%|███████   | 41/58 [00:07<00:01, 14.89it/s]Epoch 2 Train:  74%|███████▍  | 43/58 [00:08<00:00, 15.00it/s]Epoch 2 Train:  78%|███████▊  | 45/58 [00:08<00:00, 15.15it/s]Epoch 2 Train:  81%|████████  | 47/58 [00:08<00:00, 15.21it/s]Epoch 2 Train:  84%|████████▍ | 49/58 [00:08<00:00, 15.25it/s]Epoch 2 Train:  88%|████████▊ | 51/58 [00:08<00:00, 15.29it/s]Epoch 2 Train:  91%|█████████▏| 53/58 [00:08<00:00, 15.27it/s]Epoch 2 Train:  95%|█████████▍| 55/58 [00:08<00:00, 15.30it/s]Epoch 2 Train:  98%|█████████▊| 57/58 [00:08<00:00, 15.33it/s]Epoch 2 Train: 100%|██████████| 58/58 [00:09<00:00,  6.15it/s]
+Epoch 2 Valid:   0%|          | 0/7 [00:00<?, ?it/s]Epoch 2 Valid:  14%|█▍        | 1/7 [00:04<00:26,  4.35s/it]Epoch 2 Valid:  57%|█████▋    | 4/7 [00:04<00:02,  1.17it/s]Epoch 2 Valid: 100%|██████████| 7/7 [00:04<00:00,  2.25it/s]Epoch 2 Valid: 100%|██████████| 7/7 [00:04<00:00,  1.48it/s]
+[2025-10-18 19:52:15,164][__main__][INFO] - Epoch 2  Training loss: 1.9553  Validation loss: 1.8238
+  └─ z_collapse_loss: 1.309682  |  z_loss: 0.827293  |  ✅ Healthy range  |  Ratio: 0.63 (good prediction)
+[2025-10-18 19:52:15,369][__main__][INFO] - Saved model to /scratch/yp2693/world_models/quantised_dinowm/outputs/2025-10-18/19-51-36
+Epoch 3 Train:   0%|          | 0/58 [00:00<?, ?it/s]Epoch 3 Train:   2%|▏         | 1/58 [00:05<05:00,  5.28s/it]Epoch 3 Train:   5%|▌         | 3/58 [00:05<01:18,  1.42s/it]Epoch 3 Train:   9%|▊         | 5/58 [00:05<00:38,  1.38it/s]Epoch 3 Train:  12%|█▏        | 7/58 [00:05<00:22,  2.25it/s]Epoch 3 Train:  16%|█▌        | 9/58 [00:05<00:14,  3.31it/s]Epoch 3 Train:  19%|█▉        | 11/58 [00:05<00:10,  4.55it/s]Epoch 3 Train:  22%|██▏       | 13/58 [00:06<00:07,  5.91it/s]Epoch 3 Train:  26%|██▌       | 15/58 [00:06<00:05,  7.32it/s]Epoch 3 Train:  29%|██▉       | 17/58 [00:06<00:04,  8.57it/s]Epoch 3 Train:  33%|███▎      | 19/58 [00:06<00:04,  9.72it/s]Epoch 3 Train:  36%|███▌      | 21/58 [00:06<00:03, 10.77it/s]Epoch 3 Train:  40%|███▉      | 23/58 [00:06<00:02, 11.70it/s]Epoch 3 Train:  43%|████▎     | 25/58 [00:06<00:02, 12.25it/s]Epoch 3 Train:  47%|████▋     | 27/58 [00:07<00:02, 12.81it/s]Epoch 3 Train:  50%|█████     | 29/58 [00:07<00:02, 13.33it/s]Epoch 3 Train:  53%|█████▎    | 31/58 [00:07<00:01, 13.75it/s]Epoch 3 Train:  57%|█████▋    | 33/58 [00:07<00:01, 13.96it/s]Epoch 3 Train:  60%|██████    | 35/58 [00:07<00:01, 14.16it/s]Epoch 3 Train:  64%|██████▍   | 37/58 [00:07<00:01, 14.25it/s]Epoch 3 Train:  67%|██████▋   | 39/58 [00:07<00:01, 14.62it/s]Epoch 3 Train:  71%|███████   | 41/58 [00:08<00:01, 14.76it/s]Epoch 3 Train:  74%|███████▍  | 43/58 [00:08<00:01, 14.94it/s]Epoch 3 Train:  78%|███████▊  | 45/58 [00:08<00:00, 15.08it/s]Epoch 3 Train:  81%|████████  | 47/58 [00:08<00:00, 15.16it/s]Epoch 3 Train:  84%|████████▍ | 49/58 [00:08<00:00, 15.26it/s]Epoch 3 Train:  88%|████████▊ | 51/58 [00:08<00:00, 15.30it/s]Epoch 3 Train:  91%|█████████▏| 53/58 [00:08<00:00, 15.20it/s]Epoch 3 Train:  95%|█████████▍| 55/58 [00:08<00:00, 15.31it/s]Epoch 3 Train:  98%|█████████▊| 57/58 [00:09<00:00, 15.39it/s]Epoch 3 Train: 100%|██████████| 58/58 [00:09<00:00,  6.11it/s]
+Epoch 3 Valid:   0%|          | 0/7 [00:00<?, ?it/s]Epoch 3 Valid:  14%|█▍        | 1/7 [00:04<00:26,  4.41s/it]Epoch 3 Valid:  57%|█████▋    | 4/7 [00:04<00:02,  1.16it/s]Epoch 3 Valid: 100%|██████████| 7/7 [00:04<00:00,  2.21it/s]Epoch 3 Valid: 100%|██████████| 7/7 [00:04<00:00,  1.45it/s]
+[2025-10-18 19:52:34,483][__main__][INFO] - Epoch 3  Training loss: 1.2841  Validation loss: 1.6010
+  └─ z_collapse_loss: 1.300364  |  z_loss: 0.711650  |  ✅ Healthy range  |  Ratio: 0.55 (good prediction)
+[2025-10-18 19:52:34,783][__main__][INFO] - Saved model to /scratch/yp2693/world_models/quantised_dinowm/outputs/2025-10-18/19-51-36
