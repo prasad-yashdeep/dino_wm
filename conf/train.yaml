@@ -41,17 +41,23 @@ training:
   decoder_lr: 3e-4
   predictor_lr: 5e-4
   action_encoder_lr: 5e-4
+  action_quantizer_lr: 1e-4  # Learning rate for action quantizer
+  state_quantizer_lr: 1e-4   # Learning rate for state quantizer
   max_grad_norm: 1.0  # Gradient clipping to prevent instability
 
   # Learning rate scheduler configuration
   scheduler:
-    type: "cosine_with_warmup"  # Options: "cosine_with_warmup", "linear_with_warmup", "cosine", "linear", "step", "exponential", "none"
+    type: "cosine_with_warmup"  # Options: "cosine_with_warmup", "linear_with_warmup", "cosine", "linear", "step", "exponential", "none", "three_stage"
     warmup_epochs: 5  # Number of warmup epochs (only used for *_with_warmup schedulers)
     warmup_start_lr_factor: 0.01  # Starting LR factor during warmup (e.g., 0.01 means start at 1% of base LR)
     min_lr_factor: 0.0  # Minimum LR factor for cosine schedulers (e.g., 0.1 means min LR is 10% of base LR)
     # For step scheduler
     step_size: 10  # Decay LR every step_size epochs
     gamma: 0.1  # Multiplicative factor for step/exponential decay
+    # For three_stage scheduler (single-stage 3-phase training)
+    stage1_end: 30  # End epoch of Stage 1 (continuous representations)
+    stage2_end: 50  # End epoch of Stage 2 (quantizer learning)
+    stage3_encoder_lr: null  # Stage 3 encoder LR (defaults to base_lr * 0.05 if null)
 
 img_size: 224 # should be a multiple of 224
 frameskip: 5

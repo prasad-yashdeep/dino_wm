@@ -71,15 +71,19 @@ def load_ckpt(snapshot_path, device):
         print(f"Loading key: {k}, type: {type(v)}")
         if k == "encoder":
             # Reconstructing the encoder from its saved state
-            if "class_name" in v and "module_name" in v:
+            if isinstance(v, dict) and "class_name" in v and "module_name" in v:
                 encoder_class = hydra.utils.get_class(v["module_name"] + "." + v["class_name"])
                 print(f"Loading encoder class: {v['class_name']} from module {v['module_name']}")
                 encoder = encoder_class(**v["init_args"])
                 encoder.load_state_dict(v["state_dict"])
                 v = encoder
+            elif not isinstance(v, dict):
+                # Encoder is already loaded as an object
+                print(f"Encoder already loaded as object: {type(v)}")
+                pass
             else:
                 # Raise an error if the encoder class is not found
-                raise ValueError(f"Encoder class {v['class_name']} not found in module {v['module_name']}")
+                raise ValueError(f"Encoder class {v.get('class_name', 'Unknown')} not found in module {v.get('module_name', 'Unknown')}")
         if k in ALL_MODEL_KEYS:
             loaded_keys.append(k)
             result[k] = v.to(device)
@@ -136,7 +140,6 @@ def load_model(model_ckpt, train_cfg, device):
     model = hydra.utils.instantiate(
         train_cfg.model,
         encoder=result["encoder"],
-        proprio_encoder=result["proprio_encoder"],
         action_encoder=result["action_encoder"],
         predictor=result["predictor"],
         decoder=result["decoder"],
@@ -144,7 +147,6 @@ def load_model(model_ckpt, train_cfg, device):
         action_quantizer=result["action_quantizer"],
         concat_dim=train_cfg.concat_dim,
         num_action_repeat=num_action_repeat,
-        num_proprio_repeat=train_cfg.num_proprio_repeat,
     )
     model.to(device)
     return model
@@ -332,7 +334,7 @@ def visualization_main(cfg_dict):
     
     # Construct model path from ckpt_base_path and model_name (following plan.py pattern)
     ckpt_base_path = cfg_dict["ckpt_base_path"]
-    model_path = f"{ckpt_base_path}/train_outputs/{cfg_dict['model_name']}/"
+    model_path = f"{ckpt_base_path}/{cfg_dict['model_name']}/"
     model_path = Path(model_path)
     
     # Load model configuration

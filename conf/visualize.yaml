@@ -1,0 +1,33 @@
+defaults:
+  - _self_
+
+# Model configuration  
+ckpt_base_path: /scratch/yp2693/world_models/quantised_dinowm_bhumi/outputs/  # put absolute path here. Checkpoints will be loaded from ${ckpt_base_path}/train_outputs
+model_name: null  # Name of the trained model directory (under ${ckpt_base_path}/train_outputs/)
+epoch: "latest"    # Model epoch to load (final or specific epoch number)
+
+# Visualization parameters
+grid_size: 40                # Size of position grid (creates grid_size x grid_size grid)
+distance_metric: "euclidean"    # Distance metric: cosine, euclidean, or l1
+
+# Multi-reference parameters
+num_reference_positions: 10   # Number of reference positions to generate
+reference_strategy: "grid"    # Strategy for generating references: "grid" or "random"
+
+# Backward compatibility (for single reference mode)
+use_single_reference: false   # Set to true to use single reference mode
+reference_pos: [25.0, 15.0]  # Reference position [x, y] (only used if use_single_reference is true)
+
+# Output settings
+save_path: null              # Filename to save visualization (optional, auto-generated if null)
+output_base_dir: "hydra_logs/visualize_outputs"  # Base directory for outputs
+
+# Environment settings
+seed: 42                     # Random seed for reproducibility
+
+# Hydra configuration
+hydra:
+  run:
+    dir: ${output_base_dir}/${model_name}
+  job:
+    name: visualize_embeddings

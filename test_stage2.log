@@ -1,61 +1,0 @@
-[2025-10-18 19:52:38,802][__main__][INFO] - Model saved dir: /scratch/yp2693/world_models/quantised_dinowm/outputs/2025-10-18/19-52-38
-[2025-10-18 19:52:40,834][__main__][INFO] - rank: 0  model_name: 2025-10-18/19-52-38_wall_f5_h1_p1
-[2025-10-18 19:52:40,834][__main__][INFO] - device: cuda   model_name: 2025-10-18/19-52-38_wall_f5_h1_p1
-[2025-10-18 19:52:40,834][__main__][INFO] - Wandb logging disabled
-[2025-10-18 19:52:40,842][__main__][INFO] - Loading dataset from /scratch/yp2693/world_models/datasets//wall_single ...
-Loading wall dataset...
-[[42, 17, 30, 34, 20, 25, 0, 8, 36, 18, 28, 39, 3, 2, 41, 1, 37, 6, 14, 12, 11, 32, 43, 16, 5, 38, 31, 44, 26, 45, 15, 47, 4, 10, 21, 19, 33, 27, 13, 48, 46, 23, 22, 35, 7], [24, 49, 29, 40, 9]]
-[2025-10-18 19:52:40,902][__main__][INFO] - dataloader batch size: 32
-[2025-10-18 19:52:40,902][__main__][INFO] - Train encoder, predictor, decoder:            False            True            True
-[2025-10-18 19:52:40,902][__main__][INFO] - 📂 Loading checkpoint from resume_from: /scratch/yp2693/world_models/quantised_dinowm/outputs/2025-10-18/19-51-36/checkpoints/model_latest.pth
-[2025-10-18 19:52:41,194][__main__][WARNING] - Optimizer encoder_optimizer not found in trainer, skipping
-[2025-10-18 19:52:41,194][__main__][WARNING] - Scheduler encoder_scheduler not found in trainer, skipping
-[2025-10-18 19:52:41,194][__main__][WARNING] - Optimizer predictor_optimizer not found in trainer, skipping
-[2025-10-18 19:52:41,194][__main__][WARNING] - Scheduler predictor_scheduler not found in trainer, skipping
-[2025-10-18 19:52:41,194][__main__][WARNING] - Optimizer action_encoder_optimizer not found in trainer, skipping
-[2025-10-18 19:52:41,194][__main__][WARNING] - Scheduler action_encoder_scheduler not found in trainer, skipping
-[2025-10-18 19:52:41,194][__main__][WARNING] - Optimizer decoder_optimizer not found in trainer, skipping
-[2025-10-18 19:52:41,194][__main__][WARNING] - Scheduler decoder_scheduler not found in trainer, skipping
-[2025-10-18 19:52:41,195][__main__][INFO] - ✅ Resumed from epoch 3: /scratch/yp2693/world_models/quantised_dinowm/outputs/2025-10-18/19-51-36/checkpoints/model_latest.pth
-Action encoder type: <class 'models.action_encoder.proprio.ProprioEncoder'>
-State quantizer initialized with 64 codes
-Action quantizer initialized with 16 codes
-num_action_repeat: 1
-action encoder: ProprioEncoder(
-  (encoder): Sequential(
-    (0): Linear(in_features=10, out_features=64, bias=True)
-    (1): ReLU(inplace=True)
-    (2): Linear(in_features=64, out_features=10, bias=True)
-  )
-)
-action_dim: 10, after repeat: 10
-emb_dim: 74
-State quantizer: VectorQuantizer(
-  (embedding): Embedding(64, 64)
-)
-Action quantizer: VectorQuantizer(
-  (embedding): Embedding(16, 10)
-)
-Model emb_dim:  74
-Using VCReg Loss: True
-Epoch 4 Train:   0%|          | 0/58 [00:00<?, ?it/s]Epoch 4 Train:   2%|▏         | 1/58 [00:05<05:23,  5.67s/it]Epoch 4 Train:   5%|▌         | 3/58 [00:05<01:23,  1.52s/it]Epoch 4 Train:   9%|▊         | 5/58 [00:05<00:40,  1.30it/s]Epoch 4 Train:  12%|█▏        | 7/58 [00:06<00:23,  2.14it/s]Epoch 4 Train:  16%|█▌        | 9/58 [00:06<00:15,  3.16it/s]Epoch 4 Train:  19%|█▉        | 11/58 [00:06<00:10,  4.38it/s]Epoch 4 Train:  22%|██▏       | 13/58 [00:06<00:07,  5.70it/s]Epoch 4 Train:  26%|██▌       | 15/58 [00:06<00:06,  7.12it/s]Epoch 4 Train:  29%|██▉       | 17/58 [00:06<00:04,  8.38it/s]Epoch 4 Train:  33%|███▎      | 19/58 [00:06<00:04,  9.60it/s]Epoch 4 Train:  36%|███▌      | 21/58 [00:06<00:03, 10.83it/s]Epoch 4 Train:  40%|███▉      | 23/58 [00:07<00:02, 11.90it/s]Epoch 4 Train:  43%|████▎     | 25/58 [00:07<00:02, 12.70it/s]Epoch 4 Train:  47%|████▋     | 27/58 [00:07<00:02, 13.56it/s]Epoch 4 Train:  50%|█████     | 29/58 [00:07<00:02, 14.30it/s]Epoch 4 Train:  53%|█████▎    | 31/58 [00:07<00:01, 14.95it/s]Epoch 4 Train:  57%|█████▋    | 33/58 [00:07<00:01, 15.32it/s]Epoch 4 Train:  60%|██████    | 35/58 [00:07<00:01, 15.49it/s]Epoch 4 Train:  64%|██████▍   | 37/58 [00:07<00:01, 15.82it/s]Epoch 4 Train:  67%|██████▋   | 39/58 [00:08<00:01, 16.17it/s]Epoch 4 Train:  71%|███████   | 41/58 [00:08<00:01, 16.45it/s]Epoch 4 Train:  74%|███████▍  | 43/58 [00:08<00:00, 16.65it/s]Epoch 4 Train:  78%|███████▊  | 45/58 [00:08<00:00, 16.79it/s]Epoch 4 Train:  81%|████████  | 47/58 [00:08<00:00, 16.89it/s]Epoch 4 Train:  84%|████████▍ | 49/58 [00:08<00:00, 16.94it/s]Epoch 4 Train:  88%|████████▊ | 51/58 [00:08<00:00, 16.94it/s]Epoch 4 Train:  91%|█████████▏| 53/58 [00:08<00:00, 17.06it/s]Epoch 4 Train:  95%|█████████▍| 55/58 [00:09<00:00, 17.06it/s]Epoch 4 Train:  98%|█████████▊| 57/58 [00:09<00:00, 17.16it/s]Epoch 4 Train: 100%|██████████| 58/58 [00:09<00:00,  6.02it/s]
-Epoch 4 Valid:   0%|          | 0/7 [00:00<?, ?it/s]Epoch 4 Valid:  14%|█▍        | 1/7 [00:04<00:25,  4.29s/it]Epoch 4 Valid:  57%|█████▋    | 4/7 [00:04<00:02,  1.19it/s]Epoch 4 Valid: 100%|██████████| 7/7 [00:04<00:00,  2.24it/s]Epoch 4 Valid: 100%|██████████| 7/7 [00:04<00:00,  1.48it/s]
-[2025-10-18 19:52:58,757][__main__][INFO] - Epoch 4  Training loss: 2.2720  Validation loss: 2.0051
-  └─ z_collapse_loss: 0.030580  |  z_loss: 0.032813  |  ⚠️  Low diversity (potential collapse)
-  └─ State Codebook: 39.1% utilized (25 codes)  |  ⚠️  WARNING: Low utilization (<50%)
-  └─ Action Codebook: 25.1% utilized (4 codes)  |  ⚠️  WARNING: Low utilization (<50%)
-[2025-10-18 19:52:58,999][__main__][INFO] - Saved model to /scratch/yp2693/world_models/quantised_dinowm/outputs/2025-10-18/19-52-38
-Epoch 5 Train:   0%|          | 0/58 [00:00<?, ?it/s]Epoch 5 Train:   2%|▏         | 1/58 [00:05<04:57,  5.21s/it]Epoch 5 Train:   5%|▌         | 3/58 [00:05<01:16,  1.40s/it]Epoch 5 Train:   9%|▊         | 5/58 [00:05<00:37,  1.41it/s]Epoch 5 Train:  12%|█▏        | 7/58 [00:05<00:22,  2.31it/s]Epoch 5 Train:  16%|█▌        | 9/58 [00:05<00:14,  3.42it/s]Epoch 5 Train:  19%|█▉        | 11/58 [00:05<00:10,  4.68it/s]Epoch 5 Train:  22%|██▏       | 13/58 [00:05<00:07,  6.13it/s]Epoch 5 Train:  26%|██▌       | 15/58 [00:06<00:05,  7.61it/s]Epoch 5 Train:  29%|██▉       | 17/58 [00:06<00:04,  8.69it/s]Epoch 5 Train:  33%|███▎      | 19/58 [00:06<00:03,  9.95it/s]Epoch 5 Train:  36%|███▌      | 21/58 [00:06<00:03, 11.10it/s]Epoch 5 Train:  40%|███▉      | 23/58 [00:06<00:02, 11.95it/s]Epoch 5 Train:  43%|████▎     | 25/58 [00:06<00:02, 12.65it/s]Epoch 5 Train:  47%|████▋     | 27/58 [00:06<00:02, 13.45it/s]Epoch 5 Train:  50%|█████     | 29/58 [00:07<00:02, 14.05it/s]Epoch 5 Train:  53%|█████▎    | 31/58 [00:07<00:01, 14.73it/s]Epoch 5 Train:  57%|█████▋    | 33/58 [00:07<00:01, 15.31it/s]Epoch 5 Train:  60%|██████    | 35/58 [00:07<00:01, 15.59it/s]Epoch 5 Train:  64%|██████▍   | 37/58 [00:07<00:01, 15.94it/s]Epoch 5 Train:  67%|██████▋   | 39/58 [00:07<00:01, 16.25it/s]Epoch 5 Train:  71%|███████   | 41/58 [00:07<00:01, 16.49it/s]Epoch 5 Train:  74%|███████▍  | 43/58 [00:07<00:00, 16.67it/s]Epoch 5 Train:  78%|███████▊  | 45/58 [00:07<00:00, 16.76it/s]Epoch 5 Train:  81%|████████  | 47/58 [00:08<00:00, 16.92it/s]Epoch 5 Train:  84%|████████▍ | 49/58 [00:08<00:00, 16.96it/s]Epoch 5 Train:  88%|████████▊ | 51/58 [00:08<00:00, 16.91it/s]Epoch 5 Train:  91%|█████████▏| 53/58 [00:08<00:00, 17.03it/s]Epoch 5 Train:  95%|█████████▍| 55/58 [00:08<00:00, 17.07it/s]Epoch 5 Train:  98%|█████████▊| 57/58 [00:08<00:00, 17.11it/s]Epoch 5 Train: 100%|██████████| 58/58 [00:09<00:00,  6.37it/s]
-Epoch 5 Valid:   0%|          | 0/7 [00:00<?, ?it/s]Epoch 5 Valid:  14%|█▍        | 1/7 [00:04<00:26,  4.43s/it]Epoch 5 Valid:  57%|█████▋    | 4/7 [00:04<00:02,  1.15it/s]Epoch 5 Valid: 100%|██████████| 7/7 [00:04<00:00,  2.22it/s]Epoch 5 Valid: 100%|██████████| 7/7 [00:04<00:00,  1.45it/s]
-[2025-10-18 19:53:15,930][__main__][INFO] - Epoch 5  Training loss: 1.8394  Validation loss: 1.7778
-  └─ z_collapse_loss: 0.030580  |  z_loss: 0.031572  |  ⚠️  Low diversity (potential collapse)
-  └─ State Codebook: 39.1% utilized (25 codes)  |  ⚠️  WARNING: Low utilization (<50%)
-  └─ Action Codebook: 22.8% utilized (3 codes)  |  🔴 SEVERE: Codebook collapse! (<25%)
-[2025-10-18 19:53:16,112][__main__][INFO] - Saved model to /scratch/yp2693/world_models/quantised_dinowm/outputs/2025-10-18/19-52-38
-Epoch 6 Train:   0%|          | 0/58 [00:00<?, ?it/s]Epoch 6 Train:   2%|▏         | 1/58 [00:05<05:07,  5.39s/it]Epoch 6 Train:   5%|▌         | 3/58 [00:05<01:19,  1.44s/it]Epoch 6 Train:   9%|▊         | 5/58 [00:05<00:38,  1.37it/s]Epoch 6 Train:  12%|█▏        | 7/58 [00:05<00:22,  2.24it/s]Epoch 6 Train:  16%|█▌        | 9/58 [00:05<00:14,  3.32it/s]Epoch 6 Train:  19%|█▉        | 11/58 [00:05<00:10,  4.59it/s]Epoch 6 Train:  22%|██▏       | 13/58 [00:06<00:07,  6.02it/s]Epoch 6 Train:  26%|██▌       | 15/58 [00:06<00:05,  7.48it/s]Epoch 6 Train:  29%|██▉       | 17/58 [00:06<00:04,  8.70it/s]Epoch 6 Train:  33%|███▎      | 19/58 [00:06<00:03,  9.85it/s]Epoch 6 Train:  36%|███▌      | 21/58 [00:06<00:03, 11.01it/s]Epoch 6 Train:  40%|███▉      | 23/58 [00:06<00:02, 12.05it/s]Epoch 6 Train:  43%|████▎     | 25/58 [00:06<00:02, 12.74it/s]Epoch 6 Train:  47%|████▋     | 27/58 [00:07<00:02, 13.46it/s]Epoch 6 Train:  50%|█████     | 29/58 [00:07<00:02, 14.12it/s]Epoch 6 Train:  53%|█████▎    | 31/58 [00:07<00:01, 14.64it/s]Epoch 6 Train:  57%|█████▋    | 33/58 [00:07<00:01, 15.04it/s]Epoch 6 Train:  60%|██████    | 35/58 [00:07<00:01, 15.05it/s]Epoch 6 Train:  64%|██████▍   | 37/58 [00:07<00:01, 15.58it/s]Epoch 6 Train:  67%|██████▋   | 39/58 [00:07<00:01, 16.06it/s]Epoch 6 Train:  71%|███████   | 41/58 [00:07<00:01, 16.26it/s]Epoch 6 Train:  74%|███████▍  | 43/58 [00:08<00:00, 16.59it/s]Epoch 6 Train:  78%|███████▊  | 45/58 [00:08<00:00, 16.72it/s]Epoch 6 Train:  81%|████████  | 47/58 [00:08<00:00, 16.76it/s]Epoch 6 Train:  84%|████████▍ | 49/58 [00:08<00:00, 16.84it/s]Epoch 6 Train:  88%|████████▊ | 51/58 [00:08<00:00, 16.80it/s]Epoch 6 Train:  91%|█████████▏| 53/58 [00:08<00:00, 16.98it/s]Epoch 6 Train:  95%|█████████▍| 55/58 [00:08<00:00, 17.10it/s]Epoch 6 Train:  98%|█████████▊| 57/58 [00:08<00:00, 17.15it/s]Epoch 6 Train: 100%|██████████| 58/58 [00:09<00:00,  6.26it/s]
-Epoch 6 Valid:   0%|          | 0/7 [00:00<?, ?it/s]Epoch 6 Valid:  14%|█▍        | 1/7 [00:04<00:28,  4.78s/it]Epoch 6 Valid:  57%|█████▋    | 4/7 [00:04<00:02,  1.07it/s]Epoch 6 Valid: 100%|██████████| 7/7 [00:05<00:00,  2.08it/s]Epoch 6 Valid: 100%|██████████| 7/7 [00:05<00:00,  1.35it/s]
-[2025-10-18 19:53:34,369][__main__][INFO] - Epoch 6  Training loss: 1.7448  Validation loss: 1.7029
-  └─ z_collapse_loss: 0.030580  |  z_loss: 0.031982  |  ⚠️  Low diversity (potential collapse)
-  └─ State Codebook: 39.1% utilized (25 codes)  |  ⚠️  WARNING: Low utilization (<50%)
-  └─ Action Codebook: 16.9% utilized (2 codes)  |  🔴 SEVERE: Codebook collapse! (<25%)
-[2025-10-18 19:53:34,528][__main__][INFO] - Saved model to /scratch/yp2693/world_models/quantised_dinowm/outputs/2025-10-18/19-52-38

@@ -72,47 +72,128 @@ class VWorldModel(nn.Module):
         self.vcreg_objective = VCRegObjective(VCRegObjectiveConfig())
         print(f"Using VCReg Loss: {self.vcreg_loss_weight > 0}")
 
+    def set_training_stage(self, stage):
+        """
+        Dynamically configure which components should be trainable based on the training stage.
+        This supports single-stage 3-phase training.
+
+        Args:
+            stage (int): Training stage (1, 2, or 3)
+        """
+        if stage == 1:
+            # Stage 1: Train encoder/predictor/decoder, freeze quantizers
+            self.train_encoder = True
+            self.train_predictor = True
+            self.train_decoder = True
+            self.train_quantizers = False
+        elif stage == 2:
+            # Stage 2: Freeze encoder, train quantizers/predictor/decoder
+            self.train_encoder = False
+            self.train_predictor = True
+            self.train_decoder = True
+            self.train_quantizers = True
+        elif stage == 3:
+            # Stage 3: Train everything (encoder with very low LR via scheduler)
+            self.train_encoder = True
+            self.train_predictor = True
+            self.train_decoder = True
+            self.train_quantizers = True
+        else:
+            raise ValueError(f"Invalid stage: {stage}. Must be 1, 2, or 3.")
+
     def train(self, mode=True):
         super().train(mode)
         # Explicitly set train/eval mode for each component based on flags
         if self.train_encoder:
             self.encoder.train(mode)
+            for param in self.encoder.parameters():
+                param.requires_grad = mode
         else:
             self.encoder.eval()  # Force eval mode when frozen to freeze BatchNorm stats
+            for param in self.encoder.parameters():
+                param.requires_grad = False
 
         if self.predictor is not None:
             if self.train_predictor:
                 self.predictor.train(mode)
+                for param in self.predictor.parameters():
+                    param.requires_grad = mode
             else:
                 self.predictor.eval()
+                for param in self.predictor.parameters():
+                    param.requires_grad = False
 
-        # Action encoder always trains in this implementation
-        self.action_encoder.train(mode)
+        # Action encoder follows same rules as predictor
+        if self.train_predictor:
+            self.action_encoder.train(mode)
+            for param in self.action_encoder.parameters():
+                param.requires_grad = mode
+        else:
+            self.action_encoder.eval()
+            for param in self.action_encoder.parameters():
+                param.requires_grad = False
 
         if self.decoder is not None:
             if self.train_decoder:
                 self.decoder.train(mode)
+                for param in self.decoder.parameters():
+                    param.requires_grad = mode
             else:
                 self.decoder.eval()
+                for param in self.decoder.parameters():
+                    param.requires_grad = False
 
-        # Quantizers always train when present
-        if self.state_quantizer is not None:
-            self.state_quantizer.train(mode)
-        if self.action_quantizer is not None:
-            self.action_quantizer.train(mode)
+        # Quantizers train based on train_quantizers flag (for single-stage 3-phase training)
+        train_quantizers = getattr(self, 'train_quantizers', True)  # Default to True for backward compatibility
+        if self.quantize:
+            if self.state_quantizer is not None:
+                if train_quantizers:
+                    self.state_quantizer.train(mode)
+                    for param in self.state_quantizer.parameters():
+                        param.requires_grad = mode
+                else:
+                    self.state_quantizer.eval()
+                    for param in self.state_quantizer.parameters():
+                        param.requires_grad = False
+            if self.action_quantizer is not None:
+                if train_quantizers:
+                    self.action_quantizer.train(mode)
+                    for param in self.action_quantizer.parameters():
+                        param.requires_grad = mode
+                else:
+                    self.action_quantizer.eval()
+                    for param in self.action_quantizer.parameters():
+                        param.requires_grad = False
 
     def eval(self):
         super().eval()
         self.encoder.eval()
+        for param in self.encoder.parameters():
+            param.requires_grad = False
+
         if self.predictor is not None:
             self.predictor.eval()
+            for param in self.predictor.parameters():
+                param.requires_grad = False
+
         self.action_encoder.eval()
+        for param in self.action_encoder.parameters():
+            param.requires_grad = False
+
         if self.decoder is not None:
             self.decoder.eval()
-        if self.state_quantizer is not None:
-            self.state_quantizer.eval()
-        if self.action_quantizer is not None:
-            self.action_quantizer.eval()
+            for param in self.decoder.parameters():
+                param.requires_grad = False
+
+        if self.quantize:
+            if self.state_quantizer is not None:
+                self.state_quantizer.eval()
+                for param in self.state_quantizer.parameters():
+                    param.requires_grad = False
+            if self.action_quantizer is not None:
+                self.action_quantizer.eval()
+                for param in self.action_quantizer.parameters():
+                    param.requires_grad = False
 
     def encode(self, obs, act):
         """
@@ -287,7 +368,10 @@ class VWorldModel(nn.Module):
         z_src = self.encode(obs_src, act_src)
 
         # Optionally quantize the source embeddings
-        if self.quantize:
+        # IMPORTANT: Skip quantization entirely when quantizers are frozen (Stage 1 in single-stage training)
+        train_quantizers = getattr(self, 'train_quantizers', True)
+        enc_quantization_loss = 0.0  # Initialize to avoid undefined variable
+        if self.quantize and train_quantizers:
             z_src, enc_quantization_loss, enc_quantization_indices = self.quantize_embeddings(z_src)
 
             # Compute codebook utilization for monitoring
@@ -309,7 +393,7 @@ class VWorldModel(nn.Module):
         with torch.no_grad():
             z_tgt = self.encode(obs_tgt, act_tgt)
             # If quantization is enabled, we quantize the target embeddings (only state, not action)
-            if self.quantize:
+            if self.quantize and train_quantizers:
                 z_tgt, _, _ = self.quantize_embeddings(z_tgt, quantize_action=False)
 
         # z_src and z_tgt are of shape (b, num_hist, H, W, emb_dim)
@@ -330,7 +414,7 @@ class VWorldModel(nn.Module):
 
         # Quantization loss should be computed even when encoder is frozen
         # This allows the quantizers to learn to represent the (frozen) encoder outputs
-        if self.quantize:
+        if self.quantize and train_quantizers:
             loss = loss + self.quantization_loss_weight * enc_quantization_loss
             loss_components["quantization_loss"] = enc_quantization_loss
 
@@ -339,7 +423,7 @@ class VWorldModel(nn.Module):
             z_pred = self.predict(z_src)
 
             # Prediction is quantized if quantization is enabled (only state, not action)
-            if self.quantize:
+            if self.quantize and train_quantizers:
                 z_pred, pred_quantization_loss, _ = self.quantize_embeddings(z_pred, quantize_action=False)
 
             # If a decoder is present, we decode the predicted embeddings
@@ -364,39 +448,39 @@ class VWorldModel(nn.Module):
                 z_visual_loss = self.emb_criterion(z_pred_obs, z_tgt_obs)
                 z_collapse_loss = self.emb_criterion(z_src_obs, z_tgt_obs)  # checking if representation collapses
 
-                # DEBUG: Log detailed statistics about embeddings
-                if torch.rand(1).item() < 0.01:  # Log 1% of batches to avoid spam
-                    print("\n" + "="*80)
-                    print("🔍 COLLAPSE LOSS DEBUG (First batch sample)")
-                    print("="*80)
-                    print(f"z_src_obs shape: {z_src_obs.shape}")
-                    print(f"z_tgt_obs shape: {z_tgt_obs.shape}")
-                    print(f"\nz_src_obs stats:")
-                    print(f"  Mean: {z_src_obs.mean().item():.6f}")
-                    print(f"  Std:  {z_src_obs.std().item():.6f}")
-                    print(f"  Min:  {z_src_obs.min().item():.6f}")
-                    print(f"  Max:  {z_src_obs.max().item():.6f}")
-                    print(f"\nz_tgt_obs stats:")
-                    print(f"  Mean: {z_tgt_obs.mean().item():.6f}")
-                    print(f"  Std:  {z_tgt_obs.std().item():.6f}")
-                    print(f"  Min:  {z_tgt_obs.min().item():.6f}")
-                    print(f"  Max:  {z_tgt_obs.max().item():.6f}")
-                    print(f"\nDifference (z_src - z_tgt):")
-                    diff = (z_src_obs - z_tgt_obs).abs()
-                    print(f"  Mean abs diff: {diff.mean().item():.6f}")
-                    print(f"  Max abs diff:  {diff.max().item():.6f}")
-                    print(f"\nLosses:")
-                    print(f"  z_collapse_loss: {z_collapse_loss.item():.10f}")
-                    print(f"  z_visual_loss:   {z_visual_loss.item():.10f}")
+                # # DEBUG: Log detailed statistics about embeddings
+                # if torch.rand(1).item() < 0.01:  # Log 1% of batches to avoid spam
+                #     print("\n" + "="*80)
+                #     print("🔍 COLLAPSE LOSS DEBUG (First batch sample)")
+                #     print("="*80)
+                #     print(f"z_src_obs shape: {z_src_obs.shape}")
+                #     print(f"z_tgt_obs shape: {z_tgt_obs.shape}")
+                #     print(f"\nz_src_obs stats:")
+                #     print(f"  Mean: {z_src_obs.mean().item():.6f}")
+                #     print(f"  Std:  {z_src_obs.std().item():.6f}")
+                #     print(f"  Min:  {z_src_obs.min().item():.6f}")
+                #     print(f"  Max:  {z_src_obs.max().item():.6f}")
+                #     print(f"\nz_tgt_obs stats:")
+                #     print(f"  Mean: {z_tgt_obs.mean().item():.6f}")
+                #     print(f"  Std:  {z_tgt_obs.std().item():.6f}")
+                #     print(f"  Min:  {z_tgt_obs.min().item():.6f}")
+                #     print(f"  Max:  {z_tgt_obs.max().item():.6f}")
+                #     print(f"\nDifference (z_src - z_tgt):")
+                #     diff = (z_src_obs - z_tgt_obs).abs()
+                #     print(f"  Mean abs diff: {diff.mean().item():.6f}")
+                #     print(f"  Max abs diff:  {diff.max().item():.6f}")
+                #     print(f"\nLosses:")
+                #     print(f"  z_collapse_loss: {z_collapse_loss.item():.10f}")
+                #     print(f"  z_visual_loss:   {z_visual_loss.item():.10f}")
 
-                    # Check if embeddings are all zeros or very close to zero
-                    if z_src_obs.abs().max() < 1e-3:
-                        print("\n⚠️  WARNING: z_src_obs is nearly zero!")
-                    if z_tgt_obs.abs().max() < 1e-3:
-                        print("\n⚠️  WARNING: z_tgt_obs is nearly zero!")
-                    if diff.mean() < 1e-3:
-                        print("\n⚠️  WARNING: Embeddings are nearly identical!")
-                    print("="*80 + "\n")
+                #     # Check if embeddings are all zeros or very close to zero
+                #     if z_src_obs.abs().max() < 1e-3:
+                #         print("\n⚠️  WARNING: z_src_obs is nearly zero!")
+                #     if z_tgt_obs.abs().max() < 1e-3:
+                #         print("\n⚠️  WARNING: z_tgt_obs is nearly zero!")
+                #     if diff.mean() < 1e-3:
+                #         print("\n⚠️  WARNING: Embeddings are nearly identical!")
+                #     print("="*80 + "\n")
 
             z_loss = self.emb_criterion(z_pred_obs, z_tgt_obs.detach())
 

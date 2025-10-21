@@ -5,3 +5,8 @@ plan_outputs
 docs
 logs_archive
 scripts
+logs
+logs_archive
+hydra_logs 
+test_logs
+test_resume_fix_logs

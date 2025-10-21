@@ -44,10 +44,12 @@ class Conv2DEncoder(nn.Module):
             in_channels = out_channels
         
         # Final projection to latent space
-        # Note: No ReLU or BatchNorm after final projection
-        # BatchNorm here causes vanishing gradients with quantization + VCReg
+        # BatchNorm before Tanh for better normalization and training stability
+        # Tanh bounds output to [-1, +1] to prevent extreme values
         layers.extend([
             nn.Conv2d(in_channels, emb_dim, kernel_size=1),
+            nn.BatchNorm2d(emb_dim),  # Added for better normalization before activation
+            # nn.Tanh()  # Critical: prevents runaway activations (max was 130+) #edited by B
         ])
         
         self.encoder = nn.Sequential(*layers)

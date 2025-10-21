@@ -26,6 +26,128 @@ from utils import slice_trajdict_with_t, cfg_to_dict, seed, sample_tensors
 warnings.filterwarnings("ignore")
 log = logging.getLogger(__name__)
 
+class ThreeStageScheduler:
+    """
+    Custom LR scheduler that implements 3-stage training schedule in a single run.
+
+    Stage 1 (epochs 1-stage1_end): Continuous representations (encoder/predictor/decoder train, quantizers frozen)
+    Stage 2 (epochs stage1_end+1 to stage2_end): Quantizer learning (encoder frozen, quantizers/predictor/decoder train)
+    Stage 3 (epochs stage2_end+1 to total): Joint fine-tuning (all components train with low encoder LR)
+    """
+    def __init__(self, optimizer, component_name, base_lr, total_epochs,
+                 stage1_end=30, stage2_end=50,
+                 warmup_epochs=3, min_lr_factor=0.0, stage3_encoder_lr=None):
+        self.optimizer = optimizer
+        self.component_name = component_name
+        self.base_lr = base_lr
+        self.total_epochs = total_epochs
+        self.stage1_end = stage1_end
+        self.stage2_end = stage2_end
+        self.warmup_epochs = warmup_epochs
+        self.min_lr_factor = min_lr_factor
+        self.current_epoch = 0
+
+        # Stage 3 encoder LR: use provided value or default to 5% of base_lr
+        self.stage3_encoder_lr = stage3_encoder_lr if stage3_encoder_lr is not None else (base_lr * 0.05)
+
+        # Define stage-specific learning rates based on the schedule image
+        self.stage_configs = self._get_stage_config()
+
+    def _get_stage_config(self):
+        """Define LR schedule for each component in each stage"""
+        configs = {
+            'encoder': {
+                'stage1': {'active': True, 'lr': self.base_lr},  # Stage 1 encoder LR (e.g., 1e-4)
+                'stage2': {'active': False, 'lr': 0.0},  # Frozen
+                'stage3': {'active': True, 'lr': self.stage3_encoder_lr},  # Stage 3 encoder LR (e.g., 5e-6)
+            },
+            'action_encoder': {
+                'stage1': {'active': True, 'lr': self.base_lr},  # 5e-4
+                'stage2': {'active': False, 'lr': 0.0},  # Frozen
+                'stage3': {'active': True, 'lr': self.base_lr},  # 5e-4
+            },
+            'predictor': {
+                'stage1': {'active': True, 'lr': self.base_lr},  # 3e-4
+                'stage2': {'active': True, 'lr': self.base_lr},  # 3e-4
+                'stage3': {'active': True, 'lr': self.base_lr},  # 3e-4
+            },
+            'decoder': {
+                'stage1': {'active': True, 'lr': self.base_lr},  # 3e-4
+                'stage2': {'active': True, 'lr': self.base_lr},  # 3e-4
+                'stage3': {'active': True, 'lr': self.base_lr},  # 3e-4
+            },
+            'state_quantizer': {
+                'stage1': {'active': False, 'lr': 0.0},  # Frozen
+                'stage2': {'active': True, 'lr': self.base_lr},  # 1e-4
+                'stage3': {'active': True, 'lr': self.base_lr},  # 1e-4
+            },
+            'action_quantizer': {
+                'stage1': {'active': False, 'lr': 0.0},  # Frozen
+                'stage2': {'active': True, 'lr': self.base_lr},  # 1e-4
+                'stage3': {'active': True, 'lr': self.base_lr},  # 1e-4
+            },
+        }
+        return configs.get(self.component_name, {})
+
+    def get_current_stage(self):
+        """Determine current training stage"""
+        if self.current_epoch <= self.stage1_end:
+            return 'stage1', 1, self.stage1_end
+        elif self.current_epoch <= self.stage2_end:
+            return 'stage2', self.stage1_end + 1, self.stage2_end
+        else:
+            return 'stage3', self.stage2_end + 1, self.total_epochs
+
+    def get_lr(self):
+        """Calculate learning rate for current epoch"""
+        stage_name, stage_start, stage_end = self.get_current_stage()
+        stage_config = self.stage_configs.get(stage_name, {'active': False, 'lr': 0.0})
+
+        if not stage_config['active']:
+            return 0.0
+
+        stage_lr = stage_config['lr']
+        epoch_in_stage = self.current_epoch - stage_start + 1
+        stage_length = stage_end - stage_start + 1
+
+        # Warmup phase at the start of each stage
+        if epoch_in_stage <= self.warmup_epochs:
+            warmup_factor = epoch_in_stage / self.warmup_epochs
+            return stage_lr * (0.01 + 0.99 * warmup_factor)  # Start at 1% of target LR
+
+        # Cosine annealing after warmup
+        epochs_after_warmup = epoch_in_stage - self.warmup_epochs
+        total_annealing_epochs = stage_length - self.warmup_epochs
+
+        if total_annealing_epochs > 0:
+            cosine_factor = 0.5 * (1 + np.cos(np.pi * epochs_after_warmup / total_annealing_epochs))
+            lr = self.min_lr_factor * stage_lr + (stage_lr - self.min_lr_factor * stage_lr) * cosine_factor
+        else:
+            lr = stage_lr
+
+        return lr
+
+    def step(self):
+        """Update learning rate"""
+        self.current_epoch += 1
+        lr = self.get_lr()
+        for param_group in self.optimizer.param_groups:
+            param_group['lr'] = lr
+
+    def state_dict(self):
+        """Return state dict for checkpointing"""
+        return {
+            'current_epoch': self.current_epoch,
+            'base_lr': self.base_lr,
+            'component_name': self.component_name,
+        }
+
+    def load_state_dict(self, state_dict):
+        """Load state dict from checkpoint"""
+        self.current_epoch = state_dict.get('current_epoch', 0)
+        self.base_lr = state_dict.get('base_lr', self.base_lr)
+        self.component_name = state_dict.get('component_name', self.component_name)
+
 class Trainer:
     def __init__(self, cfg):
         self.cfg = cfg
@@ -176,13 +298,18 @@ class Trainer:
             ["decoder", "decoder_optimizer", "decoder_scheduler"] if self.train_decoder else []
         )
         # Add quantizers if they exist
-        if self.cfg.get("state_quantizer") is not None:
-            self._keys_to_save += ["state_quantizer"]
-        if self.cfg.get("action_quantizer") is not None:
-            self._keys_to_save += ["action_quantizer"]
+        if self.cfg.get("quantize", True):
+            if self.cfg.get("state_quantizer") is not None:
+                self._keys_to_save += ["state_quantizer", "state_quantizer_optimizer", "state_quantizer_scheduler"]
+            if self.cfg.get("action_quantizer") is not None:
+                self._keys_to_save += ["action_quantizer", "action_quantizer_optimizer", "action_quantizer_scheduler"]
+
+        # Store checkpoint path for later loading of optimizers
+        self._checkpoint_path = None  # Will be set by init_models() if resuming
 
         self.init_models()
         self.init_optimizers()
+        self.load_optimizers_from_checkpoint()  # Load optimizer states AFTER creating optimizers
 
         self.epoch_log = OrderedDict()
 
@@ -222,25 +349,25 @@ class Trainer:
         return ckpt_path, model_name, model_epoch
 
     def load_ckpt(self, filename="model_latest.pth"):
+        """Load checkpoint - only loads models, not optimizers (loaded later in load_optimizers_from_checkpoint)"""
         ckpt = torch.load(filename, weights_only=False)
+
+        # Store checkpoint path for later optimizer loading
+        self._checkpoint_path = filename
+
         for k, v in ckpt.items():
-            # Load state_dict for optimizers and schedulers
-            if k.endswith("_optimizer") and isinstance(v, dict):
-                if k in self.__dict__:
-                    self.__dict__[k].load_state_dict(v)
-                else:
-                    log.warning(f"Optimizer {k} not found in trainer, skipping")
-            elif k.endswith("_scheduler") and isinstance(v, dict):
-                if k in self.__dict__:
-                    self.__dict__[k].load_state_dict(v)
-                else:
-                    log.warning(f"Scheduler {k} not found in trainer, skipping")
-            # Load everything else directly
+            # Skip optimizers and schedulers - they will be loaded later after creation
+            if k.endswith("_optimizer") or k.endswith("_scheduler"):
+                continue
+            # Load models and other state (epoch, etc.)
             else:
                 self.__dict__[k] = v
-        not_in_ckpt = set(self._keys_to_save) - set(ckpt.keys())
+
+        # Don't warn about missing optimizers/schedulers - they'll be loaded later
+        model_keys = [k for k in self._keys_to_save if not k.endswith("_optimizer") and not k.endswith("_scheduler")]
+        not_in_ckpt = set(model_keys) - set(ckpt.keys())
         if len(not_in_ckpt):
-            log.warning("Keys not found in ckpt: %s", not_in_ckpt)
+            log.warning("Model keys not found in ckpt: %s", not_in_ckpt)
 
     def init_models(self):
         force_restart = self.cfg.get("force_restart", False)
@@ -297,30 +424,40 @@ class Trainer:
         action_emb_dim = self.action_encoder.emb_dim
         print(f"Action encoder type: {type(self.action_encoder)}")
 
-        # Initialize quantizers if configured and quantize is enabled
-        self.state_quantizer = None
-        self.action_quantizer = None
-        if self.cfg.get("quantize", True) and self.cfg.get("state_quantizer") is not None:
-            # Calculate state embedding dimension
-            if self.encoder.latent_ndim == 1:
-                state_emb_dim = self.encoder.emb_dim
-            else:
-                state_emb_dim = self.encoder.emb_dim
+        # Initialize quantizers if configured and quantize is enabled  #edited by B
+        # Skip if already loaded from checkpoint to preserve _initialized_from_data flag  #edited by B
+        if not hasattr(self, 'state_quantizer'):  #edited by B
+            self.state_quantizer = None  #edited by B
+        if not hasattr(self, 'action_quantizer'):  #edited by B
+            self.action_quantizer = None  #edited by B
 
-            self.state_quantizer = hydra.utils.instantiate(
-                self.cfg.state_quantizer,
-                embedding_dim=state_emb_dim,
-                n_embed=self.cfg.get("state_vocabulary_size", 128),
-            )
-            print(f"State quantizer initialized with {self.cfg.get('state_vocabulary_size', 128)} codes")
+        if self.cfg.get("quantize", True) and self.cfg.get("state_quantizer") is not None:
+            if self.state_quantizer is None:  #edited by B - only create if not loaded from checkpoint
+                # Calculate state embedding dimension
+                if self.encoder.latent_ndim == 1:
+                    state_emb_dim = self.encoder.emb_dim
+                else:
+                    state_emb_dim = self.encoder.emb_dim
+
+                self.state_quantizer = hydra.utils.instantiate(
+                    self.cfg.state_quantizer,
+                    embedding_dim=state_emb_dim,
+                    n_embed=self.cfg.get("state_vocabulary_size", 128),
+                )
+                print(f"State quantizer initialized with {self.cfg.get('state_vocabulary_size', 128)} codes")
+            else:  #edited by B
+                print(f"State quantizer loaded from checkpoint")  #edited by B
 
         if self.cfg.get("quantize", True) and self.cfg.get("action_quantizer") is not None:
-            self.action_quantizer = hydra.utils.instantiate(
-                self.cfg.action_quantizer,
-                embedding_dim=action_emb_dim,
-                n_embed=self.cfg.get("action_vocabulary_size", 128),
-            )
-            print(f"Action quantizer initialized with {self.cfg.get('action_vocabulary_size', 128)} codes")
+            if self.action_quantizer is None:  #edited by B - only create if not loaded from checkpoint
+                self.action_quantizer = hydra.utils.instantiate(
+                    self.cfg.action_quantizer,
+                    embedding_dim=action_emb_dim,
+                    n_embed=self.cfg.get("action_vocabulary_size", 128),
+                )
+                print(f"Action quantizer initialized with {self.cfg.get('action_vocabulary_size', 128)} codes")
+            else:  #edited by B
+                print(f"Action quantizer loaded from checkpoint")  #edited by B
 
         # Prepare action encoder and quantizers with accelerator
         if self.state_quantizer is not None and self.action_quantizer is not None:
@@ -394,13 +531,14 @@ class Trainer:
             num_action_repeat=self.cfg.num_action_repeat,
         )
 
-    def create_scheduler(self, optimizer, base_lr):
+    def create_scheduler(self, optimizer, base_lr, component_name=None):
         """
         Create a learning rate scheduler based on configuration.
 
         Args:
             optimizer: The optimizer to schedule
             base_lr: Base learning rate for the optimizer
+            component_name: Name of the component (for 3-stage scheduler)
 
         Returns:
             scheduler or None if scheduler type is "none"
@@ -410,6 +548,30 @@ class Trainer:
 
         if scheduler_type == "none":
             return None
+
+        # Support for 3-stage single-run scheduler
+        if scheduler_type == "three_stage":
+            stage1_end = scheduler_cfg.get("stage1_end", 30)
+            stage2_end = scheduler_cfg.get("stage2_end", 50)
+            warmup_epochs = scheduler_cfg.get("warmup_epochs", 3)
+            min_lr_factor = scheduler_cfg.get("min_lr_factor", 0.0)
+            stage3_encoder_lr = scheduler_cfg.get("stage3_encoder_lr", None)
+
+            if component_name is None:
+                log.warning("component_name not provided for three_stage scheduler, using default behavior")
+                component_name = "unknown"
+
+            return ThreeStageScheduler(
+                optimizer=optimizer,
+                component_name=component_name,
+                base_lr=base_lr,
+                total_epochs=self.total_epochs,
+                stage1_end=stage1_end,
+                stage2_end=stage2_end,
+                warmup_epochs=warmup_epochs,
+                min_lr_factor=min_lr_factor,
+                stage3_encoder_lr=stage3_encoder_lr
+            )
 
         total_epochs = self.total_epochs
         warmup_epochs = scheduler_cfg.get("warmup_epochs", 5)
@@ -507,6 +669,8 @@ class Trainer:
         self.predictor_scheduler = None
         self.action_encoder_scheduler = None
         self.decoder_scheduler = None
+        self.action_quantizer_scheduler = None
+        self.state_quantizer_scheduler = None
 
         self.encoder_optimizer = torch.optim.Adam(
             self.encoder.parameters(),
@@ -514,7 +678,7 @@ class Trainer:
         )
         self.encoder_optimizer = self.accelerator.prepare(self.encoder_optimizer)
         self.encoder_scheduler = self.create_scheduler(
-            self.encoder_optimizer, self.cfg.training.encoder_lr
+            self.encoder_optimizer, self.cfg.training.encoder_lr, component_name="encoder"
         )
 
         if self.cfg.has_predictor:
@@ -526,7 +690,7 @@ class Trainer:
                 self.predictor_optimizer
             )
             self.predictor_scheduler = self.create_scheduler(
-                self.predictor_optimizer, self.cfg.training.predictor_lr
+                self.predictor_optimizer, self.cfg.training.predictor_lr, component_name="predictor"
             )
 
             self.action_encoder_optimizer = torch.optim.AdamW(
@@ -537,7 +701,7 @@ class Trainer:
                 self.action_encoder_optimizer
             )
             self.action_encoder_scheduler = self.create_scheduler(
-                self.action_encoder_optimizer, self.cfg.training.action_encoder_lr
+                self.action_encoder_optimizer, self.cfg.training.action_encoder_lr, component_name="action_encoder"
             )
 
         if self.cfg.has_decoder:
@@ -546,9 +710,76 @@ class Trainer:
             )
             self.decoder_optimizer = self.accelerator.prepare(self.decoder_optimizer)
             self.decoder_scheduler = self.create_scheduler(
-                self.decoder_optimizer, self.cfg.training.decoder_lr
+                self.decoder_optimizer, self.cfg.training.decoder_lr, component_name="decoder"
             )
 
+        # Initialize quantizer optimizers and schedulers if quantization is enabled
+        if self.cfg.get("quantize", True):
+            if self.action_quantizer is not None:
+                self.action_quantizer_optimizer = torch.optim.Adam(
+                    self.action_quantizer.parameters(),
+                    lr=self.cfg.training.action_quantizer_lr,
+                )
+                self.action_quantizer_optimizer = self.accelerator.prepare(
+                    self.action_quantizer_optimizer
+                )
+                self.action_quantizer_scheduler = self.create_scheduler(
+                    self.action_quantizer_optimizer, self.cfg.training.action_quantizer_lr, component_name="action_quantizer"
+                )
+
+            if self.state_quantizer is not None:
+                self.state_quantizer_optimizer = torch.optim.Adam(
+                    self.state_quantizer.parameters(),
+                    lr=self.cfg.training.state_quantizer_lr,
+                )
+                self.state_quantizer_optimizer = self.accelerator.prepare(
+                    self.state_quantizer_optimizer
+                )
+                self.state_quantizer_scheduler = self.create_scheduler(
+                    self.state_quantizer_optimizer, self.cfg.training.state_quantizer_lr, component_name="state_quantizer"
+                )
+
+    def load_optimizers_from_checkpoint(self):
+        """Load optimizer and scheduler states from checkpoint after they've been created"""
+        if self._checkpoint_path is None:
+            log.info("No checkpoint to load optimizers from (training from scratch)")
+            return
+
+        log.info(f"📦 Loading optimizer states from checkpoint: {self._checkpoint_path}")
+        ckpt = torch.load(self._checkpoint_path, weights_only=False)
+
+        # Skip quantizer optimizer/scheduler states to avoid scheduler mismatch issues
+        # The quantizers themselves are loaded correctly, just their optimizers are reset
+        skip_keys = {'state_quantizer_optimizer', 'state_quantizer_scheduler',
+                     'action_quantizer_optimizer', 'action_quantizer_scheduler'}
+
+        loaded_count = 0
+        for k, v in ckpt.items():
+            # Skip quantizer optimizers/schedulers
+            if k in skip_keys:
+                log.info(f"  ⏭️  Skipping {k} (will use fresh optimizer/scheduler)")
+                continue
+
+            # Load state_dict for optimizers and schedulers
+            if k.endswith("_optimizer") and isinstance(v, dict):
+                if k in self.__dict__ and self.__dict__[k] is not None:
+                    self.__dict__[k].load_state_dict(v)
+                    loaded_count += 1
+                    log.info(f"  ✅ Loaded {k}")
+                else:
+                    log.warning(f"  ⚠️  Optimizer {k} not found in trainer, skipping")
+            elif k.endswith("_scheduler") and isinstance(v, dict):
+                if k in self.__dict__ and self.__dict__[k] is not None:
+                    self.__dict__[k].load_state_dict(v)
+                    loaded_count += 1
+                    log.info(f"  ✅ Loaded {k}")
+                else:
+                    log.warning(f"  ⚠️  Scheduler {k} not found in trainer, skipping")
+
+        if loaded_count > 0:
+            log.info(f"✅ Successfully loaded {loaded_count} optimizer/scheduler states")
+        else:
+            log.warning("⚠️  No optimizer or scheduler states were loaded from checkpoint")
 
     def monitor_jobs(self, lock):
         """
@@ -570,6 +801,55 @@ class Trainer:
                     self.job_set.remove((epoch, job_name, job))
             time.sleep(1)
 
+    def _initialize_codebooks_from_data(self):  #edited by B
+        """Initialize quantizer codebooks using k-means on training data embeddings."""  #edited by B
+        if self.state_quantizer is None or self.action_quantizer is None:  #edited by B
+            return  #edited by B
+
+        log.info("🔍 Initializing codebooks from training data using k-means...")  #edited by B
+
+        # Collect embeddings from training data #edited by B
+        self.model.eval()  #edited by B
+        state_embeddings = []  #edited by B
+        action_embeddings = []  #edited by B
+
+        with torch.no_grad():  #edited by B
+            for i, data in enumerate(tqdm(self.dataloaders["train"], desc="Collecting embeddings")):  #edited by B
+                obs, act, state = data  #edited by B
+                # Get encoder outputs (before quantization) #edited by B
+                # obs is a dict with 'visual' key, shape: (b, t, 3, h, w) #edited by B
+                # Take first frame from each sequence #edited by B
+                visual = obs['visual'][:, 0]  # (b, 3, h, w) #edited by B
+                visual = self.model.encoder_transform(visual)  #edited by B
+                z_obs = self.encoder(visual)  # (b, h', w', c) #edited by B
+
+                # action_encoder expects (b, t, action_dim), so add time dimension #edited by B
+                act_first = act[:, 0:1]  # (b, 1, action_dim) - keep time dimension #edited by B
+                z_act = self.action_encoder(act_first)  # (b, 1, emb_dim) #edited by B
+                z_act = z_act.squeeze(1)  # (b, emb_dim) - remove time dimension #edited by B
+
+                # Flatten spatial dimensions #edited by B
+                state_embeddings.append(z_obs.reshape(-1, z_obs.shape[-1]))  #edited by B
+                action_embeddings.append(z_act.reshape(-1, z_act.shape[-1]))  #edited by B
+
+                # Use ALL training data for better k-means initialization #edited by B
+                # With 64 state codes and 16 action codes, we need good coverage #edited by B
+
+        # Concatenate all embeddings #edited by B
+        state_embeddings = torch.cat(state_embeddings, dim=0)  #edited by B
+        action_embeddings = torch.cat(action_embeddings, dim=0)  #edited by B
+
+        log.info(f"Collected {state_embeddings.shape[0]} state embeddings, {action_embeddings.shape[0]} action embeddings")  #edited by B
+
+        # Initialize codebooks #edited by B
+        if hasattr(self.state_quantizer, 'initialize_from_data'):  #edited by B
+            self.state_quantizer.initialize_from_data(state_embeddings, use_kmeans=True)  #edited by B
+        if hasattr(self.action_quantizer, 'initialize_from_data'):  #edited by B
+            self.action_quantizer.initialize_from_data(action_embeddings, use_kmeans=True)  #edited by B
+
+        log.info("✅ Codebook initialization complete!")  #edited by B
+        self.model.train()  #edited by B
+
     def run(self):
         if self.accelerator.is_main_process:
             executor = ThreadPoolExecutor(max_workers=4)
@@ -582,8 +862,58 @@ class Trainer:
             self.monitor_thread.start()
 
         init_epoch = self.epoch + 1  # epoch starts from 1
+
+        # Check if using single-stage 3-phase training
+        is_single_stage_training = self.cfg.training.get("scheduler", {}).get("type") == "three_stage"
+
+        # For traditional 3-stage training: Initialize codebooks at the start
+        # For single-stage training: Skip initialization here, do it at Stage 1->2 transition
+        if not is_single_stage_training:
+            # Initialize codebooks from training data when quantizers first exist (fixed by B)
+            # This now works correctly when resuming from checkpoint in Stage 2
+            # The _initialized_from_data flag is saved with checkpoint, preventing re-init in Stage 3
+            if (self.state_quantizer is not None and
+                hasattr(self.state_quantizer, '_initialized_from_data') and
+                not self.state_quantizer._initialized_from_data.item()):
+                self._initialize_codebooks_from_data()
+
         for epoch in range(init_epoch, init_epoch + self.total_epochs):
             self.epoch = epoch
+
+            # For single-stage 3-phase training, update model training stage based on epoch
+            if is_single_stage_training:
+                stage1_end = self.cfg.training.scheduler.get("stage1_end", 30)
+                stage2_end = self.cfg.training.scheduler.get("stage2_end", 50)
+
+                if self.epoch <= stage1_end:
+                    current_stage = 1
+                elif self.epoch <= stage2_end:
+                    current_stage = 2
+                else:
+                    current_stage = 3
+
+                # Update model training flags
+                self.model.set_training_stage(current_stage)
+
+                # Log stage transitions
+                if self.epoch == 1:
+                    log.info(f"🔵 STAGE 1: Continuous Representations (epochs 1-{stage1_end})")
+                    log.info(f"   Training: Encoder, Predictor, Decoder | Frozen: Quantizers")
+                    log.info(f"   ℹ️  Quantization DISABLED in Stage 1 (learning continuous representations)")
+                elif self.epoch == stage1_end + 1:
+                    # Initialize codebooks at the start of Stage 2 (after encoder has learned)
+                    if (self.state_quantizer is not None and
+                        hasattr(self.state_quantizer, '_initialized_from_data') and
+                        not self.state_quantizer._initialized_from_data.item()):
+                        log.info(f"🔍 Initializing codebooks from trained encoder outputs...")
+                        self._initialize_codebooks_from_data()
+                        log.info(f"✅ Codebooks initialized! Transitioning to Stage 2...")
+                    log.info(f"🟢 STAGE 2: Quantizer Learning (epochs {stage1_end+1}-{stage2_end})")
+                    log.info(f"   Training: Quantizers, Predictor, Decoder | Frozen: Encoder")
+                elif self.epoch == stage2_end + 1:
+                    log.info(f"🟡 STAGE 3: Joint Fine-Tuning (epochs {stage2_end+1}-{self.total_epochs})")
+                    log.info(f"   Training: All components (encoder with very low LR)")
+
             self.accelerator.wait_for_everyone()
             self.train()
             self.accelerator.wait_for_everyone()
@@ -600,6 +930,11 @@ class Trainer:
             if self.cfg.has_decoder:
                 if self.decoder_scheduler is not None:
                     self.decoder_scheduler.step()
+            if self.cfg.get("quantize", True):
+                if self.action_quantizer_scheduler is not None:
+                    self.action_quantizer_scheduler.step()
+                if self.state_quantizer_scheduler is not None:
+                    self.state_quantizer_scheduler.step()
 
             self.logs_flash(step=self.epoch)
             # Save checkpoint every N epochs OR on the final epoch
@@ -667,6 +1002,20 @@ class Trainer:
         return logs
 
     def train(self):
+        # Log learning rates at the start of each epoch for debugging
+        if self.accelerator.is_main_process:
+            lr_info = []
+            if self.encoder_optimizer is not None:
+                lr_info.append(f"encoder={self.encoder_optimizer.param_groups[0]['lr']:.2e}")
+            if self.predictor_optimizer is not None:
+                lr_info.append(f"predictor={self.predictor_optimizer.param_groups[0]['lr']:.2e}")
+            if self.state_quantizer_optimizer is not None:
+                lr_info.append(f"state_q={self.state_quantizer_optimizer.param_groups[0]['lr']:.2e}")
+            if self.action_quantizer_optimizer is not None:
+                lr_info.append(f"action_q={self.action_quantizer_optimizer.param_groups[0]['lr']:.2e}")
+            if lr_info and self.epoch % 5 == 1:  # Log every 5 epochs or first epoch
+                log.info(f"📊 Learning rates at epoch {self.epoch}: {' | '.join(lr_info)}")
+
         for i, data in enumerate(
             tqdm(self.dataloaders["train"], desc=f"Epoch {self.epoch} Train")
         ):
@@ -683,6 +1032,11 @@ class Trainer:
             if self.cfg.has_predictor:
                 self.predictor_optimizer.zero_grad()
                 self.action_encoder_optimizer.zero_grad()
+            if self.cfg.get("quantize", True):
+                if self.action_quantizer is not None:
+                    self.action_quantizer_optimizer.zero_grad()
+                if self.state_quantizer is not None:
+                    self.state_quantizer_optimizer.zero_grad()
 
             self.accelerator.backward(loss)
 
@@ -699,6 +1053,11 @@ class Trainer:
                 if self.cfg.has_predictor and self.model.train_predictor:
                     self.accelerator.clip_grad_norm_(self.predictor.parameters(), max_grad_norm)
                     self.accelerator.clip_grad_norm_(self.action_encoder.parameters(), max_grad_norm)
+                if self.cfg.get("quantize", True):
+                    if self.action_quantizer is not None:
+                        self.accelerator.clip_grad_norm_(self.action_quantizer.parameters(), max_grad_norm)
+                    if self.state_quantizer is not None:
+                        self.accelerator.clip_grad_norm_(self.state_quantizer.parameters(), max_grad_norm)
 
             if self.model.train_encoder:
                 self.encoder_optimizer.step()
@@ -707,6 +1066,11 @@ class Trainer:
             if self.cfg.has_predictor and self.model.train_predictor:
                 self.predictor_optimizer.step()
                 self.action_encoder_optimizer.step()
+            if self.cfg.get("quantize", True):
+                if self.action_quantizer is not None:
+                    self.action_quantizer_optimizer.step()
+                if self.state_quantizer is not None:
+                    self.state_quantizer_optimizer.step()
 
             loss = self.accelerator.gather_for_metrics(loss).mean()
 
@@ -990,6 +1354,11 @@ class Trainer:
             epoch_log["lr/action_encoder"] = self.action_encoder_optimizer.param_groups[0]['lr']
         if self.cfg.has_decoder:
             epoch_log["lr/decoder"] = self.decoder_optimizer.param_groups[0]['lr']
+        if self.cfg.get("quantize", True):
+            if self.action_quantizer is not None:
+                epoch_log["lr/action_quantizer"] = self.action_quantizer_optimizer.param_groups[0]['lr']
+            if self.state_quantizer is not None:
+                epoch_log["lr/state_quantizer"] = self.state_quantizer_optimizer.param_groups[0]['lr']
 
         # Compute and log collapse diagnostic metrics
         if self.cfg.has_predictor and "train_z_loss" in epoch_log and "train_z_collapse_loss" in epoch_log:

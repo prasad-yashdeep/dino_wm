@@ -11,9 +11,15 @@ class VectorQuantizer(nn.Module):
         self.commitment_cost = commitment_cost
 
         self.embedding = nn.Embedding(n_embed, embedding_dim)
-        # Initialize codebook with reasonable scale to match typical encoder outputs
-        # Encoder outputs typically have std ~ 0.5-1.0, so initialize uniformly in [-1, 1]
-        self.embedding.weight.data.uniform_(-1.0, 1.0)
+        # Initialize codebook with reasonable scale to match typical encoder outputs #edited by B
+        # Encoder outputs (with Tanh) have mean~0, std~0.5, so use normal distribution #edited by B
+        # This provides better coverage than uniform initialization #edited by B
+        # Can be replaced with k-means initialization using initialize_from_data() #edited by B
+        self.embedding.weight.data.normal_(0, 0.5)  #edited by B
+
+        # Register _initialized_from_data as a buffer so it persists across checkpoint save/load #edited by B
+        # This prevents k-means from re-running in Stage 3 when loading Stage 2 checkpoint #edited by B
+        self.register_buffer('_initialized_from_data', torch.tensor(False))  #edited by B
 
     def forward(self, z_e):
         """Vector quantization step.
@@ -65,3 +71,55 @@ class VectorQuantizer(nn.Module):
         utilization = n_unique / self.n_embed
 
         return utilization, n_unique
+
+    def initialize_from_data(self, data_embeddings, use_kmeans=True):  #edited by B
+        """Initialize codebook from actual data embeddings using k-means clustering. #edited by B
+
+        This is NOT cheating - it only uses training data that the encoder already saw. #edited by B
+        Similar to how VQ-VAE paper initializes codebooks. #edited by B
+
+        Args: #edited by B
+            data_embeddings (torch.Tensor): Embeddings from training data, shape (N, embedding_dim) #edited by B
+            use_kmeans (bool): If True, use k-means clustering. If False, use random sampling. #edited by B
+        """ #edited by B
+        if self._initialized_from_data.item():  #edited by B - check tensor value
+            print("Warning: Codebook already initialized from data. Skipping.")  #edited by B
+            return  #edited by B
+
+        device = self.embedding.weight.device  #edited by B
+        data_embeddings = data_embeddings.to(device)  #edited by B
+
+        if use_kmeans:  #edited by B
+            # Simple k-means implementation (no sklearn dependency) #edited by B
+            print(f"Initializing {self.n_embed} codebook entries using k-means...")  #edited by B
+
+            # Randomly sample initial centroids from data #edited by B
+            n_samples = data_embeddings.shape[0]  #edited by B
+            if n_samples < self.n_embed:  #edited by B
+                raise ValueError(f"Not enough samples ({n_samples}) for {self.n_embed} codes")  #edited by B
+
+            indices = torch.randperm(n_samples)[:self.n_embed]  #edited by B
+            centroids = data_embeddings[indices].clone()  #edited by B
+
+            # Run k-means for a few iterations #edited by B
+            for iteration in range(10):  #edited by B
+                # Assign points to nearest centroid #edited by B
+                distances = torch.cdist(data_embeddings, centroids)  #edited by B
+                assignments = torch.argmin(distances, dim=1)  #edited by B
+
+                # Update centroids #edited by B
+                for k in range(self.n_embed):  #edited by B
+                    mask = (assignments == k)  #edited by B
+                    if mask.sum() > 0:  #edited by B
+                        centroids[k] = data_embeddings[mask].mean(dim=0)  #edited by B
+                    # If no points assigned, keep current centroid #edited by B
+
+            self.embedding.weight.data.copy_(centroids)  #edited by B
+            print(f"✅ K-means initialization complete")  #edited by B
+        else:  #edited by B
+            # Random sampling from data #edited by B
+            indices = torch.randperm(data_embeddings.shape[0])[:self.n_embed]  #edited by B
+            self.embedding.weight.data.copy_(data_embeddings[indices])  #edited by B
+            print(f"✅ Random sampling initialization complete")  #edited by B
+
+        self._initialized_from_data.fill_(True)  #edited by B - set tensor value to True

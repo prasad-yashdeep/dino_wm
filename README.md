@@ -1,204 +1,313 @@
-# **DINO-WM**: World Models on Pre-trained Visual Features enable Zero-shot Planning
-[[Paper]](https://arxiv.org/abs/2411.04983) [[Code]]() [[Data]](https://osf.io/bmw48/?view_only=a56a296ce3b24cceaf408383a175ce28) [[Project Website]](https://dino-wm.github.io/) 
+# VQ-WM: Vector-Quantized World Model
 
-[Gaoyue Zhou](https://gaoyuezhou.github.io/), [Hengkai Pan](https://hengkaipan.github.io/), [Yann LeCun](https://yann.lecun.com/) and [Lerrel Pinto](https://www.lerrelpinto.com/), New York University, Meta AI
+A PyTorch implementation of a vector-quantized world model for the Wall environment, featuring 3-phase training pipeline with continuous and discrete representations.
 
-![teaser_figure](assets/intro.png)
-
----
-
-## 📁 Project Organization
-
-This repository is organized into the following directories:
-
-- **[`scripts/`](scripts/)** - All training, testing, experiment, and analysis scripts
-  - [`scripts/tests/`](scripts/tests/) - Quick validation tests (3 epochs, small dataset)
-  - [`scripts/training/`](scripts/training/) - Production 3-stage training pipeline
-  - [`scripts/experiments/`](scripts/experiments/) - Experimental comparison scripts
-  - [`scripts/analysis/`](scripts/analysis/) - Analysis and debugging tools
-
-- **[`docs/`](docs/)** - Comprehensive documentation and analysis reports
-  - [Collapse Analysis Report](docs/COLLAPSE_ANALYSIS_REPORT.md)
-  - [Experiment Summary](docs/EXPERIMENT_SUMMARY.md)
-  - [Final Solution Guide](docs/FINAL_SOLUTION.md)
-  - [Implementation Summary](docs/IMPLEMENTATION_SUMMARY.md)
-
-- **`logs_archive/`** - Archived training and experiment logs
-
-- **`models/`** - Model architecture implementations (encoder, decoder, quantizer, etc.)
-
-- **`conf/`** - Hydra configuration files
-
-See [scripts/README.md](scripts/README.md) and [docs/README.md](docs/README.md) for detailed documentation.
-
----
-
-# Getting Started
-
-1. [Installation](#installation)
-2. [Datasets](#datasets)
-3. [Train a DINO-WM](#train-a-dino-wm)
-4. [Plan with a DINO-WM](#plan-with-a-dino-wm)
-
-## Installation
-
-Setup an environment
-```bash
-git clone https://github.com/gaoyuezhou/dino_wm.git
-cd dino_wm
-conda env create -f environment.yaml
-conda activate dino_wm
-```
-
-### Install Mujoco
-                    
-Create the `.mujoco` directory and download Mujoco210 using `wget`:
+## 🚀 Quick Start
 
 ```bash
-mkdir -p ~/.mujoco
-wget https://mujoco.org/download/mujoco210-linux-x86_64.tar.gz -P ~/.mujoco/
-cd ~/.mujoco
-tar -xzvf mujoco210-linux-x86_64.tar.gz
+# 1. Quick test (5 minutes)
+./train_single_stage_enhanced.sh --mode test
+
+# 2. Verify resume works (20 minutes)
+./tests/test_resume_fix.sh --mode single
+
+# 3. Full training (12-24 hours)
+./train_single_stage_enhanced.sh --mode full --fresh --wandb
+
+# 4. Resume if interrupted
+./train_single_stage_enhanced.sh --resume outputs/[timestamp]
 ```
 
-Append the following lines to your `~/.bashrc`:
+## 📚 Documentation
+
+### 🌟 Start Here
+- **[Training Scripts Guide](docs/TRAINING_SCRIPTS_GUIDE.md)** - Complete guide to all training scripts, usage examples, and workflows ⭐
+
+### Training Modes
+- **[Single-Stage Training](docs/SINGLE_STAGE_TRAINING_README.md)** - Recommended: 3 phases in one continuous run
+- **[3-Stage Training](docs/TRAINING_GUIDE.md)** - Advanced: Separate Stage 1 → Stage 2 → Stage 3
+
+### Technical Details
+- **[Quantizer Collapse Fix](docs/QUANTIZER_COLLAPSE_FIX.md)** - Deep dive into the resume bug and fix
+- **[Quick Fix Summary](docs/QUICK_FIX_SUMMARY.md)** - One-page reference for the fix
+- **[Implementation Summary](docs/IMPLEMENTATION_SUMMARY.md)** - Overview of all recent changes
+
+### Additional Documentation
+- **[Changes Applied](docs/CHANGES_APPLIED.md)** - Recent modifications to the codebase
+- **[Project Structure](docs/PROJECT_STRUCTURE.md)** - Codebase organization
+
+## 🎯 Training Scripts
+
+### Recommended: Enhanced Single-Stage Training
+
+**Script:** `train_single_stage_enhanced.sh`
+
+Single-stage training with all 3 phases in one run plus comprehensive resume support.
 
 ```bash
-# Mujoco Path. Replace `<username>` with your actual username if necessary.
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/home/<username>/.mujoco/mujoco210/bin
+# Full training (90 epochs, 1920 rollouts, codebook 128/128)
+./train_single_stage_enhanced.sh --mode full --fresh
 
-# NVIDIA Library Path (if using NVIDIA GPUs)
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/nvidia
+# Quick experiment (30 epochs, 400 rollouts, codebook 64/64)
+./train_single_stage_enhanced.sh --mode quick
+
+# Fast test (10 epochs, 100 rollouts, codebook 16/4)
+./train_single_stage_enhanced.sh --mode test
+
+# Resume from checkpoint
+./train_single_stage_enhanced.sh --resume outputs/2025-10-21/12-34-56
+
+# Continue if checkpoint exists, else fresh start
+./train_single_stage_enhanced.sh --mode full --continue
 ```
 
-Reload your shell configuration to apply the environment variable changes:
+**Features:**
+- ✅ Three training phases in one continuous run
+- ✅ Automatic 3-phase learning rate scheduling
+- ✅ Built-in resume support (no collapse!)
+- ✅ Multiple training modes
+- ✅ Easy checkpoint management
+
+### Legacy: 3-Stage Separate Training
+
+For users who need manual control between stages:
 
 ```bash
-source ~/.bashrc
+# Train all 3 stages separately
+./train_3stage_full.sh
+
+# Resume Stage 3 from checkpoint
+./resume_stage3_full.sh
 ```
 
-#### Notes
-- For GPU-accelerated simulations, ensure the NVIDIA drivers are correctly installed.
-- If you encounter issues, confirm that the paths in your `LD_LIBRARY_PATH` are correct.
-- If problems persist, refer to these GitHub issue pages for potential solutions: [openai/mujoco-py#773](https://github.com/openai/mujoco-py/issues/773), [ethz-asl/reinmav-gym#35](https://github.com/ethz-asl/reinmav-gym/issues/35).
+**See [Training Guide](docs/TRAINING_GUIDE.md) for details.**
 
+## 🧪 Testing
 
-The following are optional installation steps for planning in the deformable environments.
+### Test Resume Functionality
 
-### Install PyFlex (optional for deformable environments)
+Verify the quantizer collapse fix is working:
 
-Install PyFleX if you need to plan within the deformable environments. These installation instructions are adapted from [AdaptiGraph](https://github.com/Boey-li/AdaptiGraph/tree/main).
-
-We are using a docker image to compile PyFleX. Make sure you have the following packages:
-- [docker-ce](https://docs.docker.com/engine/install/ubuntu/)
-- [nvidia-docker](https://github.com/NVIDIA/nvidia-docker#quickstart)
-
-Full installation:
 ```bash
-pip install "pybind11[global]"
-sudo docker pull xingyu/softgym
-```
-Run `bash install_pyflex.sh`. You may need to `source ~/.bashrc` to `import PyFleX`.
+# Test single-stage pipeline (recommended, 20 min)
+./tests/test_resume_fix.sh --mode single
 
-Or you can manually run
+# Test 3-stage pipeline
+./tests/test_resume_fix.sh --mode 3stage
+
+# Clean start
+./tests/test_resume_fix.sh --mode single --clean
+```
+
+**Expected output:**
+```
+✅ Fix applied: Quantizer optimizers were skipped
+✅ TEST PASSED: No collapse detected!
+```
+
+See [Test Resume Fix Guide](docs/QUICK_FIX_SUMMARY.md) for more details.
+
+## 📁 Project Structure
+
+```
+quantised_dinowm_bhumi/
+├── README.md                           # This file
+├── train.py                            # Main training script
+│
+├── Training Scripts (Main)
+├── train_single_stage_enhanced.sh      # ⭐ Recommended
+├── train_single_stage.sh               # Basic single-stage
+├── train_3stage_full.sh                # Legacy 3-stage (full)
+├── train_3stage_quick.sh               # Legacy 3-stage (quick)
+├── resume_stage3_full.sh               # Resume Stage 3
+└── resume_stage3_quick.sh              # Resume Stage 3 (quick)
+│
+├── tests/                              # Testing scripts and logs
+│   ├── test_resume_fix.sh              # Test quantizer resume fix
+│   ├── test_checkpoint_loading_fix.sh  # Test checkpoint loading
+│   └── logs/                           # Test logs go here
+│
+├── docs/                               # Documentation
+│   ├── TRAINING_SCRIPTS_GUIDE.md       # ⭐ Complete usage guide
+│   ├── SINGLE_STAGE_TRAINING_README.md # Single-stage details
+│   ├── TRAINING_GUIDE.md               # 3-stage details
+│   ├── QUANTIZER_COLLAPSE_FIX.md       # Technical deep-dive
+│   ├── QUICK_FIX_SUMMARY.md            # Quick reference
+│   ├── IMPLEMENTATION_SUMMARY.md       # Recent changes overview
+│   └── ...                             # Additional docs
+│
+├── models/                             # Model implementations
+│   ├── encoder/                        # Visual encoders
+│   ├── predictor/                      # Dynamics predictors
+│   ├── decoder/                        # Visual decoders
+│   ├── quantizer/                      # Vector quantizers
+│   └── visual_world_model.py           # Main model
+│
+├── env/                                # Environment wrappers
+├── conf/                               # Hydra configuration
+└── outputs/                            # Training outputs
+```
+
+## 🎓 Training Pipeline
+
+All training (single-stage or 3-stage) goes through these phases:
+
+### Phase 1: Continuous Representations (30% of training)
+- **Trains:** Encoder, Predictor, Decoder
+- **Frozen:** Quantizers (don't exist yet)
+- **Goal:** Learn good continuous representations
+
+### Phase 2: Quantizer Learning (20% of training)
+- **Trains:** Quantizers, Predictor, Decoder
+- **Frozen:** Encoder
+- **Goal:** Learn discrete codebook while preserving encoder
+
+### Phase 3: Joint Fine-Tuning (50% of training)
+- **Trains:** Everything (encoder at very low LR)
+- **Goal:** Fine-tune all components together
+
+**Difference:**
+- **Single-stage:** All phases in one run with automatic transitions
+- **3-stage:** Each phase in separate runs with manual checkpoint management
+
+## ✅ Recent Improvements
+
+### Quantizer Collapse Fix (2025-10-21)
+
+Fixed a critical bug where quantizers would collapse immediately when resuming training.
+
+**The problem:**
+- Learning rate scheduler state mismatch
+- Resuming with different epoch counts caused corrupt LRs
+- Quantizers collapsed to single code
+
+**The solution:**
+- Skip loading quantizer optimizer/scheduler states on resume
+- Quantizer weights still preserved
+- Fresh schedulers prevent corruption
+
+**Status:** ✅ Fixed and tested
+
+See [Quantizer Collapse Fix](docs/QUANTIZER_COLLAPSE_FIX.md) for technical details.
+
+## 🛠️ Configuration
+
+Main configuration files:
+
+- `conf/train.yaml` - Training hyperparameters
+- `conf/env/wall.yaml` - Environment settings
+- `conf/encoder/conv2d.yaml` - Encoder configuration
+- `conf/predictor/conv3d.yaml` - Predictor configuration
+- `conf/decoder/vqvae.yaml` - Decoder configuration
+- `conf/state_quantizer/vector_quantizer.yaml` - State quantizer
+- `conf/action_quantizer/vector_quantizer.yaml` - Action quantizer
+
+## 🔧 Requirements
+
 ```bash
-# compile pyflex in docker image
-# re-compile if source code changed
-# make sure ${PWD}/PyFleX is the pyflex root path when re-compiling
-sudo docker run \
-    -v ${PWD}/PyFleX:/workspace/PyFleX \
-    -v ${CONDA_PREFIX}:/workspace/anaconda \
-    -v /tmp/.X11-unix:/tmp/.X11-unix \
-    --gpus all \
-    -e DISPLAY=$DISPLAY \
-    -e QT_X11_NO_MITSHM=1 \
-    -it xingyu/softgym:latest bash \
-    -c "export PATH=/workspace/anaconda/bin:$PATH; cd /workspace/PyFleX; export PYFLEXROOT=/workspace/PyFleX; export PYTHONPATH=/workspace/PyFleX/bindings/build:$PYTHONPATH; export LD_LIBRARY_PATH=$PYFLEXROOT/external/SDL2-2.0.4/lib/x64:$LD_LIBRARY_PATH; cd bindings; mkdir build; cd build; /usr/bin/cmake ..; make -j"
+# Create environment
+conda create -n vqwm python=3.9
+conda activate vqwm
 
-# import to system paths. run these if you do not have these paths yet in ~/.bashrc
-echo '# PyFleX' >> ~/.bashrc
-echo "export PYFLEXROOT=${PWD}/PyFleX" >> ~/.bashrc
-echo 'export PYTHONPATH=${PYFLEXROOT}/bindings/build:$PYTHONPATH' >> ~/.bashrc
-echo 'export LD_LIBRARY_PATH=${PYFLEXROOT}/external/SDL2-2.0.4/lib/x64:$LD_LIBRARY_PATH' >> ~/.bashrc
-echo '' >> ~/.bashrc
+# Install dependencies
+pip install -r requirements.txt
+
+# Set dataset path
+export DATASET_DIR=/path/to/datasets
 ```
 
-# Datasets
+## 📊 Monitoring Training
 
-Dataset for each task can be downloaded [here](https://osf.io/bmw48/?view_only=a56a296ce3b24cceaf408383a175ce28). 
+### Key Metrics to Watch
 
-Once the datasets are downloaded, unzip them. For the deformable dataset, you need to combine all parts and then unzip:
+**Collapse Detection:**
 ```
-zip -s- deformable.zip -O deformable_full.zip
-unzip deformable_full.zip
+z_collapse_loss: 0.945  |  ✅ Healthy range (>0.1)
+State Codebook: 100.0% utilized  |  ✅ Good (>75%)
 ```
 
-Set an environment variable pointing to your dataset folder:
+**Warning Signs:**
+```
+z_collapse_loss: 0.000  |  ⚠️ COLLAPSE DETECTED!
+State Codebook: 6.2% utilized  |  🔴 SEVERE (<25%)
+```
+
+**Learning Rates:**
+```
+📊 Learning rates at epoch 11: encoder=1.00e-04 | state_q=1.00e-04
+```
+
+### Using Wandb
+
 ```bash
-# Replace /path/to/data with the actual path to your dataset folder.
-export DATASET_DIR=/path/to/data
-```
-Inside the dataset folder, you should find the following structure:
-```
-data
-├── deformable
-│   ├── granular
-│   └── rope
-├── point_maze
-├── pusht_noise
-└── wall_single
+# Enable wandb logging
+./train_single_stage_enhanced.sh --mode full --wandb
 ```
 
+## 🐛 Troubleshooting
 
-# Train a DINO-WM
-Once you have completed the above steps, you can check whether you could launch training with an example command like this:
+### Quantizers Collapse on Resume
 
-```
-python train.py --config-name train.yaml env=point_maze frameskip=5 num_hist=3
-```
-You may specify models' output directory at `ckpt_base_path` in `conf/train.yaml`.
+**Solution:** Ensure you're using the latest code with the fix applied.
 
-# Plan with a DINO-WM
-Once a world model has been trained, you may use it for planning with an example command like this:
-
-```
-python plan.py model_name=<model_name> n_evals=5 planner=cem goal_H=5 goal_source='random_state' planner.opt_steps=30
-```
-
-where the model is saved at folder `<ckpt_base_path>/outputs/<model_name>`, and `<ckpt_base_path>` can be specified in `conf/plan.yaml`.
-
-<!-- ## Acknowledgement
-TODO -->
-
-# Pre-trained Model Checkpoints
-
-We have uploaded our trained world model checkpoints for PointMaze, PushT, and Wall [here](https://osf.io/bmw48/?view_only=a56a296ce3b24cceaf408383a175ce28) under `checkpoints`. You can launch planning jobs with their respective configs in the repo:
-
-First, update `ckpt_base_path` to where the checkpoints are saved in the plan configs.
-
-Then launch planning runs with the following commands:
+**Verify:**
 ```bash
-# PointMaze
-python plan.py --config-name plan_point_maze.yaml model_name=point_maze
-# PushT
-python plan.py --config-name plan_pusht.yaml model_name=pusht
-# Wall
-python plan.py --config-name plan_wall.yaml model_name=wall
+./tests/test_resume_fix.sh --mode single
 ```
 
-Planning logs and visualizations can be found in `./plan_outputs`.
+Look for `⏭️ Skipping` messages in logs.
 
+### Out of Memory
 
-## Citation
+**Solutions:**
+- Use smaller mode: `--mode quick` or `--mode test`
+- Reduce batch size in `conf/train.yaml`
+- Use fewer rollouts
 
-```
-@misc{zhou2024dinowmworldmodelspretrained,
-      title={DINO-WM: World Models on Pre-trained Visual Features enable Zero-shot Planning}, 
-      author={Gaoyue Zhou and Hengkai Pan and Yann LeCun and Lerrel Pinto},
-      year={2024},
-      eprint={2411.04983},
-      archivePrefix={arXiv},
-      primaryClass={cs.RO},
-      url={https://arxiv.org/abs/2411.04983}, 
+### Training Diverges
+
+**Check:**
+- Learning rates are reasonable (1e-6 to 1e-3)
+- Gradient clipping is enabled
+- VCReg loss weight not too high
+
+See [Training Scripts Guide](docs/TRAINING_SCRIPTS_GUIDE.md) for more troubleshooting.
+
+## 📖 Getting Help
+
+1. **Check documentation:**
+   - [Training Scripts Guide](docs/TRAINING_SCRIPTS_GUIDE.md) - Start here!
+   - [Technical Docs](docs/) - All documentation
+
+2. **Run tests:**
+   ```bash
+   ./tests/test_resume_fix.sh --mode single
+   ```
+
+3. **Check logs:**
+   - Training logs: `outputs/[timestamp]/`
+   - Test logs: `tests/logs/`
+
+## 📝 Citation
+
+If you use this code, please cite:
+
+```bibtex
+@misc{vqwm2025,
+  title={Vector-Quantized World Model for Wall Environment},
+  author={Your Name},
+  year={2025}
 }
 ```
+
+## 📜 License
+
+[Your License Here]
+
+---
+
+**Version:** 2.0
+**Last Updated:** 2025-10-21
+**Status:** ✅ Production Ready
+
+For detailed usage instructions, see [Training Scripts Guide](docs/TRAINING_SCRIPTS_GUIDE.md).
