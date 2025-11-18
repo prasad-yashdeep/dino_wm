@@ -83,14 +83,14 @@ class VQVAE(nn.Module):
         channel=128,
         n_res_block=2,
         n_res_channel=32,
-        emb_dim=64
+        emb_dim=128 
     ):
         super().__init__()
 
         self.upsample_b = Decoder(emb_dim, emb_dim, channel, n_res_block, n_res_channel, stride=4)
         self.dec = Decoder(
             emb_dim,
-            in_channel,
+            in_channel,  # Output should be RGB (3 channels) for image reconstruction
             channel,
             n_res_block,
             n_res_channel,

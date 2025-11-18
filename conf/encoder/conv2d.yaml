@@ -2,5 +2,5 @@ _target_: models.encoder.conv2d.Conv2DEncoder
 input_channels: 3
 emb_dim: 64
 image_size: 224
-depth: 4
-hidden_dim: 64
+depth: 4 # dont edit , will effect the decoder
+hidden_dim: 256

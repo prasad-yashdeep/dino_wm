@@ -1,6 +1,7 @@
 import torch
 import hydra
 import copy
+import sys
 import numpy as np
 from einops import rearrange, repeat
 from utils import slice_trajdict_with_t
@@ -94,7 +95,9 @@ class MPCPlanner(BasePlanner):
             memo_actions = actions.detach()[:, self.n_taken_actions :]
             self.planned_actions.append(taken_actions)
 
-            print(f"MPC iter {self.iter} Eval ------- ")
+            print(f"\n{'='*80}", flush=True)
+            print(f"MPC ITERATION {self.iter}", flush=True)
+            print(f"{'='*80}", flush=True)
             action_so_far = torch.cat(self.planned_actions, dim=1)
             self.evaluator.assign_init_cond(
                 obs_0=init_obs_0,
@@ -114,7 +117,17 @@ class MPCPlanner(BasePlanner):
                 (self.iter + 1) * self.n_taken_actions
             )  # Update only for the newly successful trajectories
 
-            print("self.is_success: ", self.is_success)
+            print("Success status: ", self.is_success, flush=True)
+            print("Intermediate logs:", flush=True)
+            for key, value in logs.items():
+                if "per_sample" in key:
+                    print(f"  {key}: {value}", flush=True)
+                else:
+                    print(f"  {key}: {value}", flush=True)
+            print(f"{'='*80}\n", flush=True)
+            sys.stdout.flush()
+            sys.stderr.flush()
+
             logs = {f"{self.logging_prefix}/{k}": v for k, v in logs.items()}
             logs.update({"step": self.iter + 1})
             self.wandb_run.log(logs)
@@ -130,6 +143,10 @@ class MPCPlanner(BasePlanner):
             )
             self.iter += 1
             self.sub_planner.logging_prefix = f"plan_{self.iter}"
+            
+            # Clear GPU cache periodically to prevent OOM
+            if self.iter % 2 == 0:
+                torch.cuda.empty_cache()
 
         planned_actions = torch.cat(self.planned_actions, dim=1)
         self.evaluator.assign_init_cond(

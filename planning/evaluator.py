@@ -129,7 +129,7 @@ class PlanEvaluator:  # evaluator for planning
 
         # plot trajs
         if self.wm.decoder is not None:
-            i_visuals = self.wm.decode_obs(i_z_obses)[0]["visual"]
+            i_visuals = self.wm.decode_obs(i_z_obses)["visual"]
             i_visuals = self._mask_traj(
                 i_visuals, action_len + 1
             )  # we have action_len + 1 states

@@ -1,0 +1,17 @@
+_target_: models.quantizer.gumbel_quantizer.GumbelQuantizer
+n_embed: 128  # Will be overridden by action_vocabulary_size
+embedding_dim: ???  # Will be calculated dynamically
+
+# Gumbel-Softmax parameters
+temperature_start: 1.0  # Initial temperature (higher = softer)
+temperature_end: 0.1  # Final temperature (lower = harder)
+temperature_decay: 0.999  # Decay per step (multiplicative)
+
+# Mode selection
+hard: false  # Use soft quantization during training
+straight_through: false  # Use straight-through estimator
+
+# EMA option (can combine Gumbel with EMA updates)
+use_ema: false  # Set to true to use EMA updates for codebook
+ema_decay: 0.99  # Only used if use_ema=true
+ema_epsilon: 1e-5  # Only used if use_ema=true

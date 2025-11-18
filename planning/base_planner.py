@@ -35,6 +35,11 @@ class BasePlanner(ABC):
             for key, value in logs.items()
         }
         if self.log_filename is not None:
+            # Ensure log_filename is an absolute path
+            import os
+            if not os.path.isabs(self.log_filename):
+                # If relative, make it absolute based on current working directory
+                self.log_filename = os.path.abspath(self.log_filename)
             with open(self.log_filename, "a") as file:
                 file.write(json.dumps(logs_entry) + "\n")
 

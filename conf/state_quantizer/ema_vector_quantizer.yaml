@@ -1,0 +1,16 @@
+_target_: models.quantizer.ema_vector_quantizer.EMAVectorQuantizer
+n_embed: 128  # Will be overridden by state_vocabulary_size
+embedding_dim: ???  # Will be calculated dynamically
+commitment_cost: 0.35  # Weight for commitment loss
+
+# KL Divergence / Commitment Loss Parameters #editedbyB
+kld_scale: 10.0  # Scale factor for full commitment loss (default: 10.0) #editedbyB
+
+# EMA update parameters
+decay: 0.99  # EMA decay rate (higher = slower adaptation, typical: 0.99)
+epsilon: 1e-5  # Laplace smoothing for numerical stability
+
+# Code reset parameters
+reset_unused_codes: true  # Enable automatic reset of dead codes
+reset_threshold: 1.0  # Reset codes with usage < this threshold
+reset_interval: 100  # Check for dead codes every N forward passes

@@ -15,7 +15,7 @@ class VectorQuantizer(nn.Module):
         # Encoder outputs (with Tanh) have mean~0, std~0.5, so use normal distribution #edited by B
         # This provides better coverage than uniform initialization #edited by B
         # Can be replaced with k-means initialization using initialize_from_data() #edited by B
-        self.embedding.weight.data.normal_(0, 0.5)  #edited by B
+        # self.embedding.weight.data.normal_(0, 1)
 
         # Register _initialized_from_data as a buffer so it persists across checkpoint save/load #edited by B
         # This prevents k-means from re-running in Stage 3 when loading Stage 2 checkpoint #edited by B

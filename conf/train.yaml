@@ -9,14 +9,16 @@ defaults:
   - action_quantizer: vector_quantizer
   - override hydra/launcher: submitit_slurm
 
-# base path to save model outputs. Checkpoints will be saved to ${ckpt_base_path}/outputs.
+# base path to save model outputs. Checkpoints will be saved to ${ckpt_base_path}/${outputs_dir}.
 ckpt_base_path: ./ # put absolute path here
+outputs_dir: outputs # Set to "small_outputs" for small dataset runs, "outputs" for full dataset
+wandb_project: dino_wm # Set to "dino_wm_small" for small dataset runs, "dino_wm" for full dataset
 
 hydra:
   run:
-    dir: ${ckpt_base_path}/outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    dir: ${ckpt_base_path}/${outputs_dir}/${now:%Y-%m-%d}/${now:%H-%M-%S}
   sweep:
-    dir: ${ckpt_base_path}/outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    dir: ${ckpt_base_path}/${outputs_dir}/${now:%Y-%m-%d}/${now:%H-%M-%S}
     subdir: ${hydra.job.num}
   # launcher:
   #   submitit_folder: ${hydra.sweep.dir}/.submitit/%j
@@ -34,7 +36,7 @@ training:
   seed: 0
   epochs: 100
   batch_size: 32 # should >= nodes * tasks_per_node
-  save_every_x_epoch: 5
+  save_every_x_epoch: 3
   reconstruct_every_x_batch: 500
   num_reconstruct_samples: 6
   encoder_lr: 1e-4  # Increased from 1e-6 to help encoder learn diverse features
@@ -95,11 +97,10 @@ disable_wandb: False
 force_restart: False  # Set to True to ignore existing checkpoints and start fresh
 resume_from: null     # Path to checkpoint directory to resume from (e.g., outputs/2025-10-18/18-45-02)
 
-# Planning params for planning eval jobs launched during training
-plan_settings: 
-  # plan_cfg_path: conf/plan.yaml # set to null for no planning evals
-  plan_cfg_path: null 
-  planner: ['gd', 'cem']
-  goal_source: ['dset', 'random_state']
-  goal_H: [5]
-  alpha: [0.1, 1]
+
+plan_settings:
+  plan_cfg_path: conf/plan_wall.yaml  # Set to null to disable planning
+  planner: ['mpc_cem']  # Use MPC with CEM sub-planner
+  goal_source: ['random_state']  # Random initial states and goal states
+  goal_H: [5]  # Goal horizon: observation 5 steps later as the goal
+  alpha: [1]  # Objective alpha value

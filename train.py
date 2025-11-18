@@ -155,7 +155,13 @@ class Trainer:
             cfg["saved_folder"] = os.getcwd()
             log.info(f"Model saved dir: {cfg['saved_folder']}")
         cfg_dict = cfg_to_dict(cfg)
-        model_name = cfg_dict["saved_folder"].split("outputs/")[-1]
+        # Extract model_name: split on outputs_dir (e.g., "outputs/" or "small_outputs/")
+        outputs_dir_pattern = f"{self.cfg.outputs_dir}/"
+        if outputs_dir_pattern in cfg_dict["saved_folder"]:
+            model_name = cfg_dict["saved_folder"].split(outputs_dir_pattern)[-1]
+        else:
+            # Fallback for old "outputs/" pattern
+            model_name = cfg_dict["saved_folder"].split("outputs/")[-1]
         model_name += f"_{self.cfg.env.name}_f{self.cfg.frameskip}_h{self.cfg.num_hist}_p{self.cfg.num_pred}"
 
         if HydraConfig.get().mode == RunMode.MULTIRUN:
@@ -212,21 +218,20 @@ class Trainer:
                         log.info(f"Resuming Wandb run {wandb_run_id}")
 
                 wandb_dict = OmegaConf.to_container(cfg, resolve=True)
+                # Determine wandb project based on debug flag and custom wandb_project setting
                 if self.cfg.debug:
                     log.info("WARNING: Running in debug mode...")
-                    self.wandb_run = wandb.init(
-                        project="dino_wm_debug",
-                        config=wandb_dict,
-                        id=wandb_run_id,
-                        resume="allow",
-                    )
+                    wandb_proj = f"{self.cfg.get('wandb_project', 'dino_wm')}_debug"
                 else:
-                    self.wandb_run = wandb.init(
-                        project="dino_wm",
-                        config=wandb_dict,
-                        id=wandb_run_id,
-                        resume="allow",
-                    )
+                    wandb_proj = self.cfg.get('wandb_project', 'dino_wm')
+
+                log.info(f"Logging to Wandb project: {wandb_proj}")
+                self.wandb_run = wandb.init(
+                    project=wandb_proj,
+                    config=wandb_dict,
+                    id=wandb_run_id,
+                    resume="allow",
+                )
                 OmegaConf.set_struct(cfg, False)
                 cfg.wandb_run_id = self.wandb_run.id
                 OmegaConf.set_struct(cfg, True)
@@ -344,7 +349,13 @@ class Trainer:
             ckpt_path = os.path.join(os.getcwd(), f"checkpoints/model_{self.epoch}.pth")
         else:
             ckpt_path = None
-        model_name = self.cfg["saved_folder"].split("outputs/")[-1]
+        # Extract model_name using outputs_dir (already computed in __init__)
+        outputs_dir_pattern = f"{self.cfg.outputs_dir}/"
+        if outputs_dir_pattern in self.cfg["saved_folder"]:
+            model_name = self.cfg["saved_folder"].split(outputs_dir_pattern)[-1]
+        else:
+            # Fallback for old "outputs/" pattern
+            model_name = self.cfg["saved_folder"].split("outputs/")[-1]
         model_epoch = self.epoch
         return ckpt_path, model_name, model_epoch
 
@@ -850,124 +861,162 @@ class Trainer:
         log.info("✅ Codebook initialization complete!")  #edited by B
         self.model.train()  #edited by B
 
+
     def run(self):
-        if self.accelerator.is_main_process:
-            executor = ThreadPoolExecutor(max_workers=4)
-            self.job_set = set()
-            lock = threading.Lock()
+            # NOTE: Using inline planning now (sequential execution) instead of submitit jobs
+            # if self.accelerator.is_main_process:
+            #     executor = ThreadPoolExecutor(max_workers=4)
+            #     self.job_set = set()
+            #     lock = threading.Lock()
+            #
+            #     self.monitor_thread = threading.Thread(
+            #         target=self.monitor_jobs, args=(lock,), daemon=True
+            #     )
+            #     self.monitor_thread.start()
 
-            self.monitor_thread = threading.Thread(
-                target=self.monitor_jobs, args=(lock,), daemon=True
-            )
-            self.monitor_thread.start()
+            init_epoch = self.epoch + 1  # epoch starts from 1
 
-        init_epoch = self.epoch + 1  # epoch starts from 1
+            # Check if using single-stage 3-phase training
+            is_single_stage_training = self.cfg.training.get("scheduler", {}).get("type") == "three_stage"
 
-        # Check if using single-stage 3-phase training
-        is_single_stage_training = self.cfg.training.get("scheduler", {}).get("type") == "three_stage"
+            # For traditional 3-stage training: Initialize codebooks at the start
+            # For single-stage training: Skip initialization here, do it at Stage 1->2 transition
+            if not is_single_stage_training:
+                # Initialize codebooks from training data when quantizers first exist (fixed by B)
+                # This now works correctly when resuming from checkpoint in Stage 2
+                # The _initialized_from_data flag is saved with checkpoint, preventing re-init in Stage 3
+                if (self.state_quantizer is not None and
+                    hasattr(self.state_quantizer, '_initialized_from_data') and
+                    not self.state_quantizer._initialized_from_data.item()):
+                    self._initialize_codebooks_from_data()
 
-        # For traditional 3-stage training: Initialize codebooks at the start
-        # For single-stage training: Skip initialization here, do it at Stage 1->2 transition
-        if not is_single_stage_training:
-            # Initialize codebooks from training data when quantizers first exist (fixed by B)
-            # This now works correctly when resuming from checkpoint in Stage 2
-            # The _initialized_from_data flag is saved with checkpoint, preventing re-init in Stage 3
-            if (self.state_quantizer is not None and
-                hasattr(self.state_quantizer, '_initialized_from_data') and
-                not self.state_quantizer._initialized_from_data.item()):
-                self._initialize_codebooks_from_data()
+            for epoch in range(init_epoch, init_epoch + self.total_epochs):
+                self.epoch = epoch
 
-        for epoch in range(init_epoch, init_epoch + self.total_epochs):
-            self.epoch = epoch
+                # For single-stage 3-phase training, update model training stage based on epoch
+                if is_single_stage_training:
+                    stage1_end = self.cfg.training.scheduler.get("stage1_end", 30)
+                    stage2_end = self.cfg.training.scheduler.get("stage2_end", 50)
 
-            # For single-stage 3-phase training, update model training stage based on epoch
-            if is_single_stage_training:
-                stage1_end = self.cfg.training.scheduler.get("stage1_end", 30)
-                stage2_end = self.cfg.training.scheduler.get("stage2_end", 50)
+                    if self.epoch <= stage1_end:
+                        current_stage = 1
+                    elif self.epoch <= stage2_end:
+                        current_stage = 2
+                    else:
+                        current_stage = 3
 
-                if self.epoch <= stage1_end:
-                    current_stage = 1
-                elif self.epoch <= stage2_end:
-                    current_stage = 2
-                else:
-                    current_stage = 3
+                    # Update model training flags
+                    self.model.set_training_stage(current_stage)
 
-                # Update model training flags
-                self.model.set_training_stage(current_stage)
+                    # Log stage transitions
+                    if self.epoch == 1:
+                        log.info(f"🔵 STAGE 1: Continuous Representations (epochs 1-{stage1_end})")
+                        log.info(f"   Training: Encoder, Predictor, Decoder | Frozen: Quantizers")
+                        log.info(f"   ℹ️  Quantization DISABLED in Stage 1 (learning continuous representations)")
+                    elif self.epoch == stage1_end + 1:
+                        # Initialize codebooks at the start of Stage 2 (after encoder has learned)
+                        if (self.state_quantizer is not None and
+                            hasattr(self.state_quantizer, '_initialized_from_data') and
+                            not self.state_quantizer._initialized_from_data.item()):
+                            log.info(f"🔍 Initializing codebooks from trained encoder outputs...")
+                            self._initialize_codebooks_from_data()
+                            log.info(f"✅ Codebooks initialized! Transitioning to Stage 2...")
+                        log.info(f"🟢 STAGE 2: Quantizer Learning (epochs {stage1_end+1}-{stage2_end})")
+                        log.info(f"   Training: Quantizers, Predictor, Decoder | Frozen: Encoder")
+                    elif self.epoch == stage2_end + 1:
+                        log.info(f"🟡 STAGE 3: Joint Fine-Tuning (epochs {stage2_end+1}-{self.total_epochs})")
+                        log.info(f"   Training: All components (encoder with very low LR)")
 
-                # Log stage transitions
-                if self.epoch == 1:
-                    log.info(f"🔵 STAGE 1: Continuous Representations (epochs 1-{stage1_end})")
-                    log.info(f"   Training: Encoder, Predictor, Decoder | Frozen: Quantizers")
-                    log.info(f"   ℹ️  Quantization DISABLED in Stage 1 (learning continuous representations)")
-                elif self.epoch == stage1_end + 1:
-                    # Initialize codebooks at the start of Stage 2 (after encoder has learned)
-                    if (self.state_quantizer is not None and
-                        hasattr(self.state_quantizer, '_initialized_from_data') and
-                        not self.state_quantizer._initialized_from_data.item()):
-                        log.info(f"🔍 Initializing codebooks from trained encoder outputs...")
-                        self._initialize_codebooks_from_data()
-                        log.info(f"✅ Codebooks initialized! Transitioning to Stage 2...")
-                    log.info(f"🟢 STAGE 2: Quantizer Learning (epochs {stage1_end+1}-{stage2_end})")
-                    log.info(f"   Training: Quantizers, Predictor, Decoder | Frozen: Encoder")
-                elif self.epoch == stage2_end + 1:
-                    log.info(f"🟡 STAGE 3: Joint Fine-Tuning (epochs {stage2_end+1}-{self.total_epochs})")
-                    log.info(f"   Training: All components (encoder with very low LR)")
+                self.accelerator.wait_for_everyone()
+                self.train()
+                self.accelerator.wait_for_everyone()
+                self.val()
 
-            self.accelerator.wait_for_everyone()
-            self.train()
-            self.accelerator.wait_for_everyone()
-            self.val()
+                # Step schedulers after each epoch
+                if self.encoder_scheduler is not None:
+                    self.encoder_scheduler.step()
+                if self.cfg.has_predictor:
+                    if self.predictor_scheduler is not None:
+                        self.predictor_scheduler.step()
+                    if self.action_encoder_scheduler is not None:
+                        self.action_encoder_scheduler.step()
+                if self.cfg.has_decoder:
+                    if self.decoder_scheduler is not None:
+                        self.decoder_scheduler.step()
+                if self.cfg.get("quantize", True):
+                    if self.action_quantizer_scheduler is not None:
+                        self.action_quantizer_scheduler.step()
+                    if self.state_quantizer_scheduler is not None:
+                        self.state_quantizer_scheduler.step()
 
-            # Step schedulers after each epoch
-            if self.encoder_scheduler is not None:
-                self.encoder_scheduler.step()
-            if self.cfg.has_predictor:
-                if self.predictor_scheduler is not None:
-                    self.predictor_scheduler.step()
-                if self.action_encoder_scheduler is not None:
-                    self.action_encoder_scheduler.step()
-            if self.cfg.has_decoder:
-                if self.decoder_scheduler is not None:
-                    self.decoder_scheduler.step()
-            if self.cfg.get("quantize", True):
-                if self.action_quantizer_scheduler is not None:
-                    self.action_quantizer_scheduler.step()
-                if self.state_quantizer_scheduler is not None:
-                    self.state_quantizer_scheduler.step()
+                self.logs_flash(step=self.epoch)
+                # Save checkpoint every N epochs OR on the final epoch
+                if self.epoch % self.cfg.training.save_every_x_epoch == 0 or self.epoch == self.total_epochs:
+                    ckpt_path, model_name, model_epoch = self.save_ckpt()
+                    # main thread only: run planning inline (sequentially) on the saved ckpt
+                    if (
+                        self.cfg.plan_settings.plan_cfg_path is not None
+                        and ckpt_path is not None
+                    ):  # ckpt_path is only not None for main process
+                        from plan import build_plan_cfg_dicts, planning_main
 
-            self.logs_flash(step=self.epoch)
-            # Save checkpoint every N epochs OR on the final epoch
-            if self.epoch % self.cfg.training.save_every_x_epoch == 0 or self.epoch == self.total_epochs:
-                ckpt_path, model_name, model_epoch = self.save_ckpt()
-                # main thread only: launch planning jobs on the saved ckpt
-                if (
-                    self.cfg.plan_settings.plan_cfg_path is not None
-                    and ckpt_path is not None
-                ):  # ckpt_path is only not None for main process
-                    from plan import build_plan_cfg_dicts, launch_plan_jobs
+                        # For inline planning, set ckpt_base_path to project root
+                        # so plan.py can find: {ckpt_base_path}/{outputs_dir}/{model_name}/
+                        inline_ckpt_base_path = self.base_path
 
-                    cfg_dicts = build_plan_cfg_dicts(
-                        plan_cfg_path=os.path.join(
-                            self.base_path, self.cfg.plan_settings.plan_cfg_path
-                        ),
-                        ckpt_base_path=self.cfg.ckpt_base_path,
-                        model_name=model_name,
-                        model_epoch=model_epoch,
-                        planner=self.cfg.plan_settings.planner,
-                        goal_source=self.cfg.plan_settings.goal_source,
-                        goal_H=self.cfg.plan_settings.goal_H,
-                        alpha=self.cfg.plan_settings.alpha,
-                    )
-                    jobs = launch_plan_jobs(
-                        epoch=self.epoch,
-                        cfg_dicts=cfg_dicts,
-                        plan_output_dir=os.path.join(
-                            os.getcwd(), "submitit-evals", f"epoch_{self.epoch}"
-                        ),
-                    )
-                    with lock:
-                        self.job_set.update(jobs)
+                        cfg_dicts = build_plan_cfg_dicts(
+                            plan_cfg_path=os.path.join(
+                                self.base_path, self.cfg.plan_settings.plan_cfg_path
+                            ),
+                            ckpt_base_path=inline_ckpt_base_path,
+                            outputs_dir=self.cfg.outputs_dir,  # Pass outputs_dir explicitly
+                            model_name=model_name,
+                            model_epoch=model_epoch,
+                            planner=self.cfg.plan_settings.planner,
+                            goal_source=self.cfg.plan_settings.goal_source,
+                            goal_H=self.cfg.plan_settings.goal_H,
+                            alpha=self.cfg.plan_settings.alpha,
+                        )
+                        # Run planning inline (sequentially) for each config
+                        for cfg_dict in cfg_dicts:
+                            subdir_name = f"{cfg_dict['planner']['name']}_goal_source={cfg_dict['goal_source']}_goal_H={cfg_dict['goal_H']}_alpha={cfg_dict['objective']['alpha']}"
+                            plan_output_dir = os.path.join(
+                                os.getcwd(), "plan_outputs", f"epoch_{self.epoch}", subdir_name
+                            )
+                            os.makedirs(plan_output_dir, exist_ok=True)
+                            cfg_dict["saved_folder"] = plan_output_dir
+                            cfg_dict["wandb_logging"] = False  # don't init wandb in subprocess
+
+                            log.info(f"Running planning inline for: {subdir_name}")
+                            try:
+                                result = planning_main(cfg_dict)
+
+                                # Print all planning results with detailed formatting
+                                log.info(f"\n{'='*80}")
+                                log.info(f"PLANNING RESULTS FOR: {subdir_name}")
+                                log.info(f"{'='*80}")
+                                for key, value in result.items():
+                                    if "per_sample" in key:
+                                        log.info(f"{key}:")
+                                        if isinstance(value, list):
+                                            for i, v in enumerate(value):
+                                                log.info(f"  Sample {i}: {v}")
+                                        else:
+                                            log.info(f"  {value}")
+                                    else:
+                                        log.info(f"{key}: {value}")
+                                log.info(f"{'='*80}\n")
+
+                                # Log results to wandb
+                                log_data = {
+                                    f"{subdir_name}/{key}": value for key, value in result.items()
+                                }
+                                log_data["epoch"] = self.epoch
+                                if self.wandb_run is not None:
+                                    self.wandb_run.log(log_data)
+                                log.info(f"Planning results logged for {subdir_name}")
+                            except Exception as e:
+                                log.error(f"Planning failed for {subdir_name}: {e}", exc_info=True)
 
     def err_eval_single(self, z_pred, z_tgt):
         logs = {}

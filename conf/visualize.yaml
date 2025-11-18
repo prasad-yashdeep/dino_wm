@@ -2,7 +2,7 @@ defaults:
   - _self_
 
 # Model configuration  
-ckpt_base_path: /scratch/yp2693/world_models/quantised_dinowm_bhumi/outputs/  # put absolute path here. Checkpoints will be loaded from ${ckpt_base_path}/train_outputs
+ckpt_base_path: /scratch/yp2693/world_models/bhumi_exp_2/outputs/  # put absolute path here. Checkpoints will be loaded from ${ckpt_base_path}/train_outputs
 model_name: null  # Name of the trained model directory (under ${ckpt_base_path}/train_outputs/)
 epoch: "latest"    # Model epoch to load (final or specific epoch number)
 

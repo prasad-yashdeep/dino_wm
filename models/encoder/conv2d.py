@@ -49,7 +49,11 @@ class Conv2DEncoder(nn.Module):
         layers.extend([
             nn.Conv2d(in_channels, emb_dim, kernel_size=1),
             nn.BatchNorm2d(emb_dim),  # Added for better normalization before activation
-            # nn.Tanh()  # Critical: prevents runaway activations (max was 130+) #edited by B
+            nn.ReLU(inplace=True)
+            # Bounded activation: range [-1, +1], symmetric distribution
+            # Note: Changed from ReLU to Tanh for full representational capacity
+            # ReLU: [0, +∞) → wastes half the codebook (no negatives)
+            # Tanh: [-1, +1] → uses full codebook, can represent opposites
         ])
         
         self.encoder = nn.Sequential(*layers)

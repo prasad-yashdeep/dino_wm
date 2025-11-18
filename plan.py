@@ -68,6 +68,7 @@ def launch_plan_jobs(
 def build_plan_cfg_dicts(
     plan_cfg_path="",
     ckpt_base_path="",
+    outputs_dir="outputs",
     model_name="",
     model_epoch="final",
     planner=["gd", "cem"],
@@ -77,6 +78,17 @@ def build_plan_cfg_dicts(
 ):
     """
     Return a list of plan overrides, for model_path, add a key in the dict {"model_path": model_path}.
+
+    Args:
+        plan_cfg_path: Path to planning config file
+        ckpt_base_path: Base path where checkpoints are stored
+        outputs_dir: Output directory name (e.g., "outputs" or "small_outputs")
+        model_name: Model name/path relative to outputs_dir
+        model_epoch: Epoch number or "latest"
+        planner: List of planner names
+        goal_source: List of goal sources
+        goal_H: List of goal horizons
+        alpha: List of alpha values for objective
     """
     config_path = os.path.dirname(plan_cfg_path)
     overrides = [
@@ -85,6 +97,7 @@ def build_plan_cfg_dicts(
             "goal_source": g_source,
             "goal_H": g_H,
             "ckpt_base_path": ckpt_base_path,
+            "outputs_dir": outputs_dir,
             "model_name": model_name,
             "model_epoch": model_epoch,
             "objective": {"alpha": a},
@@ -349,7 +362,7 @@ class PlanWorkspace:
 
 def load_ckpt(snapshot_path, device):
     with snapshot_path.open("rb") as f:
-        payload = torch.load(f, map_location=device)
+        payload = torch.load(f, map_location=device, weights_only=False)
     loaded_keys = []
     result = {}
     for k, v in payload.items():
@@ -433,7 +446,12 @@ def planning_main(cfg_dict):
         wandb_run = None
 
     ckpt_base_path = cfg_dict["ckpt_base_path"]
-    model_path = f"{ckpt_base_path}/outputs/{cfg_dict['model_name']}/"
+    outputs_dir = cfg_dict.get("outputs_dir", "outputs")  # Default to "outputs" for backward compatibility
+    model_name_path = cfg_dict['model_name']
+
+    # Construct model path: {ckpt_base_path}/{outputs_dir}/{model_name}/
+    model_path = f"{ckpt_base_path}/{outputs_dir}/{model_name_path}/"
+
     with open(os.path.join(model_path, "hydra.yaml"), "r") as f:
         model_cfg = OmegaConf.load(f)
 

@@ -5,8 +5,11 @@ A PyTorch implementation of a vector-quantized world model for the Wall environm
 ## 🚀 Quick Start
 
 ```bash
-# 1. Quick test (5 minutes)
-./train_single_stage_enhanced.sh --mode test
+# 0. Verify Tanh setup (1 minute - NEW!)
+python verify_tanh_setup.py
+
+# 1. Quick test with EMA quantizer (10 minutes - UPDATED!)
+./test_new_quantizers.sh
 
 # 2. Verify resume works (20 minutes)
 ./tests/test_resume_fix.sh --mode single
@@ -28,6 +31,9 @@ A PyTorch implementation of a vector-quantized world model for the Wall environm
 - **[3-Stage Training](docs/TRAINING_GUIDE.md)** - Advanced: Separate Stage 1 → Stage 2 → Stage 3
 
 ### Technical Details
+- **[Tanh Activation Update](docs/TANH_ACTIVATION_UPDATE.md)** - ⭐ NEW: Tanh for full codebook capacity & symmetric representations
+- **[Improved Quantizers](docs/IMPROVED_QUANTIZERS.md)** - ⭐ NEW: EMA & Gumbel quantizers for better codebook utilization
+- **[Codebook Initialization](docs/CODEBOOK_INITIALIZATION.md)** - Deep dive into matching encoder output distribution
 - **[Quantizer Collapse Fix](docs/QUANTIZER_COLLAPSE_FIX.md)** - Deep dive into the resume bug and fix
 - **[Quick Fix Summary](docs/QUICK_FIX_SUMMARY.md)** - One-page reference for the fix
 - **[Implementation Summary](docs/IMPLEMENTATION_SUMMARY.md)** - Overview of all recent changes
@@ -67,6 +73,26 @@ Single-stage training with all 3 phases in one run plus comprehensive resume sup
 - ✅ Built-in resume support (no collapse!)
 - ✅ Multiple training modes
 - ✅ Easy checkpoint management
+
+### New: 3-Stage Training with Smooth Learning Rate Decay
+
+**Script:** `train_single_stage_dynamic_lr.sh` ⭐ NEW
+
+Implements proper 3-stage training with smooth cosine annealing within each stage (not just step decay).
+
+```bash
+./train_single_stage_dynamic_lr.sh
+```
+
+**Stage Breakdown:**
+- **Stage 1 (1-30):** Encoder learns | Quantizers FROZEN → continuous representations
+- **Stage 2 (31-60):** Encoder FROZEN | Quantizers learn → discrete codebook
+- **Stage 3 (61-100):** All train (encoder at 5e-6 LR) → fine-tuning
+
+**Features:**
+- ✅ Component freezing via learning rate (LR=0 = frozen)
+- ✅ Smooth cosine annealing within each stage
+- ✅ With new improvements: Tanh encoder, EMA quantizer, KL divergence scaling
 
 ### Legacy: 3-Stage Separate Training
 
@@ -115,7 +141,8 @@ quantised_dinowm_bhumi/
 ├── train.py                            # Main training script
 │
 ├── Training Scripts (Main)
-├── train_single_stage_enhanced.sh      # ⭐ Recommended
+├── train_single_stage_enhanced.sh      # ⭐ Recommended (3-phase in 1 run)
+├── train_single_stage_dynamic_lr.sh    # ⭐ NEW (all train together, dynamic LR)
 ├── train_single_stage.sh               # Basic single-stage
 ├── train_3stage_full.sh                # Legacy 3-stage (full)
 ├── train_3stage_quick.sh               # Legacy 3-stage (quick)
@@ -130,6 +157,7 @@ quantised_dinowm_bhumi/
 ├── docs/                               # Documentation
 │   ├── TRAINING_SCRIPTS_GUIDE.md       # ⭐ Complete usage guide
 │   ├── SINGLE_STAGE_TRAINING_README.md # Single-stage details
+│   ├── SINGLE_STAGE_DYNAMIC_LR.md      # ⭐ NEW: Dynamic LR guide
 │   ├── TRAINING_GUIDE.md               # 3-stage details
 │   ├── QUANTIZER_COLLAPSE_FIX.md       # Technical deep-dive
 │   ├── QUICK_FIX_SUMMARY.md            # Quick reference
