@@ -13,6 +13,5 @@ test_resume_fix_logs
 assets
 small_outputs
 wandb
-sweep
 sweep_outputs
 sweep_logs

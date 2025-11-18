@@ -1,0 +1,172 @@
+# W&B Hyperparameter Sweep Configuration for 3-Stage World Model Training
+# This sweep tests different hyperparameter combinations to find optimal settings
+# for quantization training
+
+program: train_sweep_wrapper.py
+method: random  # Use random search for grid + log-uniform combination
+early_terminate:
+  type: hyperband
+  max_iter: 20
+  eta: 2
+  s: 5
+
+# Entity and project for W&B (update with your workspace)
+entity: yashdeep18121-new-york-university
+project: dino_wm_sweeps
+
+# Sweep parameters
+parameters:
+  # ============================================================================
+  # LOSS WEIGHTS - Test different balance between reconstruction and quantization
+  # ============================================================================
+
+  # Quantization Loss Weight: Controls how much the model trades reconstruction
+  # quality for discrete representations
+  # - 0.5: Less emphasis on quantization, more on reconstruction quality
+  # - 1.0: Balanced
+  # - 2.0: More emphasis on learning good discrete codes
+  model.quantization_loss_weight:
+    values: [0.5, 1.0, 2.0]
+
+  # VCReg Loss Weight: Prevents codebook collapse by ensuring diverse codes
+  # - 1: Minimal diversity regularization
+  # - 5: Moderate diversity
+  # - 10: Strong diversity (may reduce codebook utilization)
+  model.vcreg_loss_weight:
+    values: [1, 5, 10]
+
+  # ============================================================================
+  # LEARNING RATES - Test different learning rates for key components
+  # ============================================================================
+
+  # State Quantizer Learning Rate: Controls how fast codebook entries update
+  # Range: 5e-6 (very slow) to 5e-3 (very fast)
+  # Lower = stable but slow to converge
+  # Higher = faster but may diverge
+  training.state_quantizer_lr:
+    distribution: log_uniform_values
+    min: 0.000005
+    max: 0.005
+
+  # Predictor Learning Rate: Controls how fast the next-frame predictor learns
+  # Range: 5e-6 to 5e-3
+  training.predictor_lr:
+    distribution: log_uniform_values
+    min: 0.000005
+    max: 0.005
+
+  # Encoder Learning Rate: Controls how fast the visual encoder learns
+  # Range: 5e-6 to 5e-3
+  # Note: In Stage 2 (quantization), encoder is frozen (LR=0)
+  #       In Stage 1, lower LR helps prevent overfitting
+  training.encoder_lr:
+    distribution: log_uniform_values
+    min: 0.000005
+    max: 0.005
+
+  # ============================================================================
+  # FIXED PARAMETERS - Keep consistent across all sweep runs
+  # ============================================================================
+
+  # Fixed environment and model config
+  env:
+    value: wall
+  frameskip:
+    value: 5
+  num_hist:
+    value: 1
+  env.dataset.n_rollout:
+    value: 400
+
+  # Training configuration
+  training.epochs:
+    value: 30
+  training.batch_size:
+    value: 32
+  training.max_grad_norm:
+    value: 1.0
+
+  # Scheduler settings (crucial for stability)
+  training.scheduler.type:
+    value: cosine_with_warmup
+  training.scheduler.warmup_epochs:
+    value: 5
+  training.scheduler.warmup_start_lr_factor:
+    value: 0.01
+  training.scheduler.min_lr_factor:
+    value: 0.0
+
+  # Keep decoder and action encoder LRs fixed
+  training.decoder_lr:
+    value: 3e-4
+  training.action_encoder_lr:
+    value: 5e-4
+  training.action_quantizer_lr:
+    value: 1e-4
+
+  # Model architecture (fixed from working config)
+  encoder:
+    value: conv2d
+  predictor:
+    value: conv3d
+  decoder:
+    value: vqvae
+  action_encoder:
+    value: proprio
+
+  # Quantization settings
+  quantize:
+    value: true
+  state_vocabulary_size:
+    value: 128
+  action_vocabulary_size:
+    value: 16
+
+  # Model flags
+  model.train_encoder:
+    value: true
+  model.train_predictor:
+    value: true
+  model.train_decoder:
+    value: true
+
+  # W&B settings
+  disable_wandb:
+    value: false
+  force_restart:
+    value: false
+
+# ============================================================================
+# SWEEP EXPLANATION
+# ============================================================================
+#
+# This sweep creates a grid of 3 × 3 × random × random × random combinations:
+#
+# Quantization Loss × VCReg Loss × State Quant LR × Predictor LR × Encoder LR
+# = 3 × 3 × (log-uniform) × (log-uniform) × (log-uniform)
+#
+# Total combinations tested: 3 × 3 = 9 (with random LRs varying)
+#
+# KEY INSIGHTS:
+# 1. Quantization Loss Weight (0.5, 1.0, 2.0):
+#    - Tests balance between reconstruction quality and discrete representation learning
+#    - Lower values preserve image quality but may learn poor discrete codes
+#    - Higher values prioritize learning good codes at cost of blurriness
+#
+# 2. VCReg Loss Weight (1, 5, 10):
+#    - Tests codebook diversity enforcement
+#    - Lower = more codes used (higher utilization, higher collapse loss)
+#    - Higher = fewer codes used (lower utilization but stable)
+#
+# 3. Learning Rates (5e-6 to 5e-3):
+#    - Log-uniform distribution tests wide range
+#    - State Quantizer: affects codebook stability
+#    - Predictor: affects next-frame prediction quality
+#    - Encoder: affects feature representation learning
+#
+# EXPECTED OUTCOMES:
+# - Best config likely has balanced quantization loss (~1.0)
+# - VCReg weight should match dataset size (5-10 for 100 rollouts)
+# - Learning rates should be ~1e-4 to 1e-5 based on previous experiments
+#
+# ============================================================================

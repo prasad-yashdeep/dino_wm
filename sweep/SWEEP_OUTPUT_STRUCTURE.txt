@@ -1,0 +1,226 @@
+╔═══════════════════════════════════════════════════════════════════════════════╗
+║              SWEEP OUTPUTS ORGANIZATION - COMPLETE STRUCTURE                   ║
+╚═══════════════════════════════════════════════════════════════════════════════╝
+
+LOCATION: /scratch/yp2693/world_models/bhumi_exp_2/sweep_outputs/
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+sweep_outputs/
+│
+├── README.md                          [Comprehensive directory guide]
+│
+├── logs/                              [W&B Agent Execution Logs]
+│   ├── sweep_agent_1.log             - Single agent or agent 1 (parallel)
+│   ├── sweep_agent_2.log             - Agent 2 output (parallel only)
+│   ├── sweep_agent_3.log             - Agent 3 output (parallel only)
+│   └── sweep_agent_N.log             - Agent N output
+│
+├── runs/                              [Training Model Outputs]
+│   └── YYYY-MM-DD/                   (Date folder)
+│       └── HH-MM-SS/                 (Timestamp folder - each run)
+│           ├── checkpoints/          (Model checkpoint files)
+│           │   ├── model_latest.pth  - Most recent checkpoint
+│           │   ├── model_1.pth       - Epoch 1 checkpoint
+│           │   ├── model_2.pth       - Epoch 2 checkpoint
+│           │   └── ...
+│           ├── hydra/                (Configuration snapshots)
+│           │   ├── config.yaml
+│           │   ├── .hydra/
+│           │   │   ├── config.yaml
+│           │   │   ├── hydra.yaml
+│           │   │   └── overrides.yaml
+│           │   └── outputs/
+│           ├── outputs.log           - Training log output
+│           └── [other training outputs]
+│
+└── configs/                           [Sweep Configuration Backups]
+    ├── sweep_abc123_2025-11-17_19-30-45.yaml
+    ├── sweep_xyz789_2025-11-17_20-15-30.yaml
+    └── sweep_XXXXX_TIMESTAMP.yaml
+
+
+═══════════════════════════════════════════════════════════════════════════════════
+
+WHAT'S IN EACH DIRECTORY
+═══════════════════════════════════════════════════════════════════════════════════
+
+📋 logs/ - Agent Execution Logs
+  ├─ Purpose: Track W&B agent activity and hyperparameter sampling
+  ├─ Content: Agent startup, run assignments, command execution, status
+  ├─ Size: ~5-10MB per agent
+  ├─ View: tail -f sweep_outputs/logs/sweep_agent_1.log
+  └─ Keep: Yes (useful for debugging)
+
+🗂️  runs/ - Training Model Outputs
+  ├─ Purpose: Store all model checkpoints and training artifacts
+  ├─ Content:
+  │   ├─ Checkpoints (model weights at various epochs)
+  │   ├─ Hydra configuration (exact params used for training)
+  │   ├─ Training logs and outputs
+  │   └─ Tensorboard logs, etc.
+  ├─ Size: ~500MB - 2GB per run × 27 runs = ~10-50GB total
+  ├─ Organization: By timestamp (YYYY-MM-DD/HH-MM-SS/)
+  ├─ Keep: Yes (models needed for evaluation/inference)
+  └─ Cleanup: rm -rf sweep_outputs/runs/ (after archiving best models)
+
+⚙️  configs/ - Sweep Configuration Backups
+  ├─ Purpose: Store snapshot of each sweep configuration
+  ├─ Content: Copy of sweep.yaml at time of sweep creation
+  ├─ Naming: sweep_{SWEEP_ID}_{TIMESTAMP}.yaml
+  ├─ Size: ~5KB per config
+  ├─ Keep: Yes (useful for reproducing specific sweeps)
+  └─ Use: cat sweep_outputs/configs/sweep_abc123*.yaml
+
+
+═══════════════════════════════════════════════════════════════════════════════════
+
+KEY CHANGES MADE
+═══════════════════════════════════════════════════════════════════════════════════
+
+1. ✅ Created sweep_outputs/ directory structure
+   - Centralized location for all sweep-related outputs
+   - Replaces scattered sweep_logs/, outputs/, etc.
+
+2. ✅ Modified train_sweep_wrapper.py
+   - Added: outputs_dir=sweep_outputs/runs parameter
+   - Effect: All training outputs saved to sweep_outputs/runs/ instead of outputs/
+   - Line added: hydra_args.append('outputs_dir=sweep_outputs/runs')
+
+3. ✅ Updated sweep_manager.sh
+   - Changed LOG_DIR from sweep_logs to sweep_outputs/logs
+   - Added config backup to sweep_outputs/configs/
+   - Updated summary to show new paths
+   - Added useful command examples
+
+4. ✅ Created documentation
+   - sweep_outputs/README.md - Detailed structure guide
+   - SWEEP_SETUP_GUIDE.md - Quick reference and how-to
+   - SWEEP_OUTPUT_STRUCTURE.txt - This file
+
+
+═══════════════════════════════════════════════════════════════════════════════════
+
+ACCESSING YOUR DATA
+═══════════════════════════════════════════════════════════════════════════════════
+
+View Agent Logs (Real-time)
+  $ tail -f sweep_outputs/logs/sweep_agent_1.log
+
+View All Completed Runs
+  $ ls -ltra sweep_outputs/runs/*/*/
+
+View Specific Run Configuration
+  $ cat sweep_outputs/runs/2025-11-17/19-30-45/.hydra/config.yaml
+
+View Training Outputs
+  $ cat sweep_outputs/runs/2025-11-17/19-30-45/outputs.log
+
+List All Checkpoints
+  $ find sweep_outputs/runs -name "*.pth" | head -10
+
+Check W&B Dashboard
+  https://wandb.ai/yashdeep18121-new-york-university/dino_wm_sweeps
+
+Calculate Disk Usage
+  $ du -sh sweep_outputs/runs/
+  $ du -sh sweep_outputs/
+
+
+═══════════════════════════════════════════════════════════════════════════════════
+
+STORAGE ESTIMATES
+═══════════════════════════════════════════════════════════════════════════════════
+
+Per Training Run:
+  - Checkpoints:      ~300-500MB  (depends on checkpoint frequency)
+  - Configs/Hydra:    ~10MB
+  - Logs:             ~50MB
+  - Total per run:    ~500MB - 2GB
+
+Full Sweep (27 configurations):
+  - Logs (agent):     ~50MB
+  - Training runs:    ~10-50GB (27 × 500MB to 2GB)
+  - Configs:          ~200KB
+  - Total:            ~10-50GB
+
+Estimated Training Time:
+  - Per run:          ~20-25 minutes
+  - Sequential (1 agent):  ~9-12 hours for all 27
+  - Parallel (4 agents):   ~2-3 hours for all 27
+
+
+═══════════════════════════════════════════════════════════════════════════════════
+
+FILES MODIFIED
+═══════════════════════════════════════════════════════════════════════════════════
+
+1. train_sweep_wrapper.py
+   └─ Added: outputs_dir=sweep_outputs/runs parameter
+
+2. sweep_manager.sh
+   ├─ Changed: LOG_DIR path
+   ├─ Added: Config backup functionality
+   ├─ Updated: Summary output with sweep_outputs paths
+   └─ Enhanced: User-friendly command examples
+
+NEW FILES CREATED
+═══════════════════════════════════════════════════════════════════════════════════
+
+1. sweep_outputs/README.md
+   └─ Comprehensive guide for sweep_outputs structure
+
+2. SWEEP_SETUP_GUIDE.md
+   └─ Quick reference guide for running sweeps
+
+3. SWEEP_OUTPUT_STRUCTURE.txt
+   └─ This file - visual representation
+
+
+═══════════════════════════════════════════════════════════════════════════════════
+
+NEXT STEPS
+═══════════════════════════════════════════════════════════════════════════════════
+
+1. Run a sweep:
+   $ cd /scratch/yp2693/world_models/bhumi_exp_2
+   $ source /scratch/yp2693/world_models/penv/bin/activate
+   $ ./sweep_manager.sh
+
+2. Monitor progress:
+   $ tail -f sweep_outputs/logs/sweep_agent_1.log
+   Visit: https://wandb.ai/yashdeep18121-new-york-university/dino_wm_sweeps
+
+3. After completion:
+   - Best models: sweep_outputs/runs/YYYY-MM-DD/HH-MM-SS/checkpoints/
+   - Configurations: sweep_outputs/configs/
+   - Results: W&B Dashboard
+
+4. Archive best results:
+   $ cp -r sweep_outputs/runs/YYYY-MM-DD/HH-MM-SS/ ~/best_sweep_run/
+
+
+═══════════════════════════════════════════════════════════════════════════════════
+
+TROUBLESHOOTING
+═══════════════════════════════════════════════════════════════════════════════════
+
+❌ Agent not starting:
+   ✓ Check: source /scratch/yp2693/world_models/penv/bin/activate
+   ✓ Check: wandb login (verify authentication)
+
+❌ Training errors in sweep:
+   ✓ View: tail -100 sweep_outputs/logs/sweep_agent_1.log
+   ✓ Check: cat sweep_outputs/runs/YYYY-MM-DD/HH-MM-SS/outputs.log
+
+❌ Low disk space:
+   ✓ Check: du -sh sweep_outputs/
+   ✓ Archive old runs or delete sweep_outputs/runs/ after backing up best models
+
+❌ Can't find outputs:
+   ✓ Use: find sweep_outputs -name "*.pth" -type f
+   ✓ Use: ls -ltra sweep_outputs/runs/*/*/
+
+
+═══════════════════════════════════════════════════════════════════════════════════
+Generated: 2025-11-17
+═══════════════════════════════════════════════════════════════════════════════════
