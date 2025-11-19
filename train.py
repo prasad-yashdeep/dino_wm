@@ -197,6 +197,14 @@ class Trainer:
         self.total_epochs = self.cfg.training.epochs
         self.epoch = 0
 
+        # Early stopping tracking
+        self.early_stop_patience = 10
+        self.min_codebook_codes = 40  # Minimum number of unique codes to avoid collapse
+        self.best_val_loss = float('inf')
+        self.epochs_without_improvement = 0
+        self.loss_history = []  # Track recent losses for stagnation detection
+        self.last_epoch_log = OrderedDict()  # Store last epoch's logs for early stopping
+
         assert cfg.training.batch_size % self.accelerator.num_processes == 0, (
             "Batch size must be divisible by the number of processes. "
             f"Batch_size: {cfg.training.batch_size} num_processes: {self.accelerator.num_processes}."
@@ -950,6 +958,76 @@ class Trainer:
                         self.state_quantizer_scheduler.step()
 
                 self.logs_flash(step=self.epoch)
+
+                # ==================== Early Stopping Logic ====================
+                # Get current epoch metrics (use last_epoch_log which was saved in logs_flash)
+                current_val_loss = self.last_epoch_log.get('val_loss', float('inf'))
+                state_n_unique = self.last_epoch_log.get('train_state_codebook_n_unique', None)
+
+                # Track loss history
+                self.loss_history.append(current_val_loss)
+                if len(self.loss_history) > self.early_stop_patience:
+                    self.loss_history.pop(0)
+
+                # Check 1: Codebook collapse (after epoch 10)
+                should_stop_collapse = False
+                if self.epoch >= 10 and state_n_unique is not None:
+                    if state_n_unique < self.min_codebook_codes:
+                        log.warning(f"🛑 EARLY STOPPING: Codebook collapse detected!")
+                        log.warning(f"   State codebook using only {state_n_unique}/{self.cfg.get('state_vocabulary_size', 128)} codes (< {self.min_codebook_codes} threshold)")
+                        log.warning(f"   Stopping at epoch {self.epoch} to save compute.")
+                        should_stop_collapse = True
+
+                # Check 2: Loss stagnation (hovering in same range for 10 epochs)
+                should_stop_stagnation = False
+                if len(self.loss_history) >= self.early_stop_patience:
+                    # Check if loss is stagnating (std dev is very small)
+                    import numpy as np
+                    loss_std = np.std(self.loss_history)
+                    loss_mean = np.mean(self.loss_history)
+
+                    # If std is < 0.5% of mean, consider it stagnated
+                    if loss_mean > 0 and (loss_std / loss_mean) < 0.005:
+                        log.warning(f"🛑 EARLY STOPPING: Loss stagnation detected!")
+                        log.warning(f"   Loss has been hovering around {loss_mean:.4f} (±{loss_std:.4f}) for {self.early_stop_patience} epochs")
+                        log.warning(f"   Relative std: {(loss_std/loss_mean)*100:.2f}% (< 0.5% threshold)")
+                        log.warning(f"   Stopping at epoch {self.epoch} to save compute.")
+                        should_stop_stagnation = True
+
+                # Check 3: Track best validation loss for improvement monitoring
+                if current_val_loss < self.best_val_loss:
+                    self.best_val_loss = current_val_loss
+                    self.epochs_without_improvement = 0
+                else:
+                    self.epochs_without_improvement += 1
+
+                # Perform early stopping if conditions met
+                if should_stop_collapse or should_stop_stagnation:
+                    # Save final checkpoint before stopping
+                    log.info("💾 Saving final checkpoint before early stop...")
+                    ckpt_path, model_name, model_epoch = self.save_ckpt()
+
+                    # Log to wandb
+                    if self.accelerator.is_main_process and self.wandb_run is not None:
+                        early_stop_reason = []
+                        if should_stop_collapse:
+                            early_stop_reason.append("codebook_collapse")
+                        if should_stop_stagnation:
+                            early_stop_reason.append("loss_stagnation")
+
+                        self.wandb_run.log({
+                            "early_stopped": True,
+                            "early_stop_epoch": self.epoch,
+                            "early_stop_reason": ",".join(early_stop_reason),
+                            "final_val_loss": current_val_loss,
+                            "final_state_codebook_n_unique": state_n_unique if state_n_unique is not None else 0,
+                        })
+                        self.wandb_run.finish()
+
+                    log.info(f"✅ Training stopped early at epoch {self.epoch}")
+                    return  # Exit the run() method
+                # ==================== /Early Stopping Logic ====================
+
                 # Save checkpoint every N epochs OR on the final epoch
                 if self.epoch % self.cfg.training.save_every_x_epoch == 0 or self.epoch == self.total_epochs:
                     ckpt_path, model_name, model_epoch = self.save_ckpt()
@@ -958,7 +1036,7 @@ class Trainer:
                         self.cfg.plan_settings.plan_cfg_path is not None
                         and ckpt_path is not None
                     ):  # ckpt_path is only not None for main process
-                        from plan import build_plan_cfg_dicts, planning_main
+                        from plan import build_plan_cfg_dicts, planning_main_in_dir
 
                         # For inline planning, set ckpt_base_path to project root
                         # so plan.py can find: {ckpt_base_path}/{outputs_dir}/{model_name}/
@@ -989,7 +1067,7 @@ class Trainer:
 
                             log.info(f"Running planning inline for: {subdir_name}")
                             try:
-                                result = planning_main(cfg_dict)
+                                result = planning_main_in_dir(plan_output_dir, cfg_dict)
 
                                 # Print all planning results with detailed formatting
                                 log.info(f"\n{'='*80}")
@@ -1478,6 +1556,10 @@ class Trainer:
 
         if self.accelerator.is_main_process and self.wandb_run is not None:
             self.wandb_run.log(epoch_log)
+
+        # Store final epoch_log for early stopping checks (before clearing)
+        self.last_epoch_log = epoch_log.copy()
+
         self.epoch_log = OrderedDict()
 
     def plot_samples(

@@ -32,8 +32,12 @@ ALL_MODEL_KEYS = [
 ]
 
 def planning_main_in_dir(working_dir, cfg_dict):
-    os.chdir(working_dir)
-    return planning_main(cfg_dict=cfg_dict)
+    original_dir = os.getcwd()
+    try:
+        os.chdir(working_dir)
+        return planning_main(cfg_dict=cfg_dict)
+    finally:
+        os.chdir(original_dir)
 
 def launch_plan_jobs(
     epoch,

@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(echo:*)",
+      "Bash(bash:*)",
+      "Bash(conda activate:*)",
+      "Bash(source /scratch/yp2693/world_models/penv/bin/activate:*)",
+      "Bash(python:*)",
+      "Bash(/scratch/yp2693/world_models/penv/bin/python:*)",
+      "Bash(nvidia-smi:*)",
+      "Bash(accelerate config:*)",
+      "Bash(kill:*)",
+      "Bash(pkill:*)",
+      "Bash(cat:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

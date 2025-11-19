@@ -17,8 +17,7 @@ set -e
 # Activate Conda Environment
 # ============================================================================
 
-eval "$(conda shell.bash hook)"
-conda activate /scratch/yp2693/world_models/penv
+
 
 echo "✅ Activated conda environment: /scratch/yp2693/world_models/penv"
 echo ""
@@ -28,10 +27,10 @@ echo ""
 # ============================================================================
 
 # Training configuration
-TOTAL_EPOCHS=3
-N_ROLLOUT=200
-OUTPUTS_DIR="small_outputs"
-WANDB_PROJECT="dino_wm_small"
+TOTAL_EPOCHS=50
+N_ROLLOUT=1920
+OUTPUTS_DIR="outputs"
+WANDB_PROJECT="dino_wm_full"
 
 # Resume from existing checkpoint (set via environment variable)
 RESUME_FROM=${RESUME_FROM:-""}
@@ -85,10 +84,9 @@ echo "🚀 Starting training with inline planning..."
 echo ""
 
 # Build the training command
-TRAIN_CMD="python train.py \
+TRAIN_CMD="/scratch/yp2693/world_models/penv/bin/python train.py \
     --config-name train.yaml \
     env=wall \
-    env.dataset.n_rollout=$N_ROLLOUT \
     outputs_dir=$OUTPUTS_DIR \
     wandb_project=$WANDB_PROJECT \
     img_size=224 \
@@ -104,25 +102,25 @@ TRAIN_CMD="python train.py \
     training.seed=0 \
     training.epochs=$TOTAL_EPOCHS \
     training.batch_size=32 \
-    training.save_every_x_epoch=1 \
+    training.save_every_x_epoch=2 \
     training.reconstruct_every_x_batch=500 \
     training.num_reconstruct_samples=6 \
     training.encoder_lr=1e-4 \
     training.decoder_lr=3e-4 \
-    training.predictor_lr=5e-4 \
-    training.action_encoder_lr=5e-4 \
-    training.action_quantizer_lr=1e-4 \
-    training.state_quantizer_lr=1e-4 \
+    training.predictor_lr=3e-4 \
+    training.action_encoder_lr=1e-4 \
+    training.action_quantizer_lr=3e-4 \
+    training.state_quantizer_lr=3e-4 \
     training.max_grad_norm=1.0 \
     training.scheduler.type=cosine_with_warmup \
     training.scheduler.warmup_epochs=5 \
     training.scheduler.warmup_start_lr_factor=0.01 \
-    training.scheduler.min_lr_factor=0.0 \
+    training.scheduler.min_lr_factor=0.2 \
     model.train_encoder=True \
     model.train_predictor=True \
     model.train_decoder=True \
-    model.vcreg_loss_weight=1.0 \
-    model.quantization_loss_weight=1.0 \
+    model.vcreg_loss_weight=10.0 \
+    model.quantization_loss_weight=0.5 \
     quantize=True \
     state_vocabulary_size=128 \
     action_vocabulary_size=128 \

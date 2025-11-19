@@ -90,7 +90,7 @@ model:
 # Quantization settings
 quantize: True  # Set to False to disable quantization
 state_vocabulary_size: 128
-action_vocabulary_size: 128
+action_vocabulary_size: 64
 
 debug: False
 disable_wandb: False
@@ -99,7 +99,7 @@ resume_from: null     # Path to checkpoint directory to resume from (e.g., outpu
 
 
 plan_settings:
-  plan_cfg_path: conf/plan_wall.yaml  # Set to null to disable planning
+  plan_cfg_path: null  # Set to null to disable planning
   planner: ['mpc_cem']  # Use MPC with CEM sub-planner
   goal_source: ['random_state']  # Random initial states and goal states
   goal_H: [5]  # Goal horizon: observation 5 steps later as the goal
